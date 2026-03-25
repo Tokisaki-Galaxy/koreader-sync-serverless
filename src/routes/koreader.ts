@@ -135,9 +135,8 @@ function parseSnapshotFromJson(value: string): StatisticsSnapshot | null {
   try {
     const parsed = JSON.parse(value) as unknown;
     if (!parsed || typeof parsed !== "object") return null;
-    const books = Array.isArray((parsed as Record<string, unknown>).books)
-      ? (parsed as Record<string, unknown>).books
-      : [];
+    const booksRaw = (parsed as Record<string, unknown>).books;
+    const books: unknown[] = Array.isArray(booksRaw) ? booksRaw : [];
     const normalizedBooks = books.map(normalizeBook).filter((row): row is StatisticsBookRow => row !== null);
     return { books: normalizedBooks };
   } catch {
