@@ -1,10 +1,18 @@
-export function renderAdminPage(): string {
+import { getMessages, type Locale } from "../i18n";
+
+function toScriptJson(value: unknown): string {
+  return JSON.stringify(value).replaceAll("<", "\\u003c");
+}
+
+export function renderAdminPage(locale: Locale): string {
+  const m = getMessages(locale).admin;
+  const i18nJson = toScriptJson(m);
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${locale}">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>KOReader Sync · 管理后台</title>
+  <title>${m.title}</title>
   <style>
     :root {
       --bg: #0b1220;
@@ -70,14 +78,14 @@ export function renderAdminPage(): string {
 </head>
 <body>
   <div class="wrap">
-    <h1 class="title">KOReader Sync 管理后台</h1>
-    <p class="subtitle">管理员通过 token 登录后可管理用户（删除/强制改密）。用户入口：<a href="/" style="color:#93c5fd;">/</a></p>
+    <h1 class="title">${m.heading}</h1>
+    <p class="subtitle">${m.subtitle}<a href="/" style="color:#93c5fd;">/</a></p>
 
     <section class="card" id="loginCard">
-      <h3 style="margin-top:0;">管理员登录（Token）</h3>
+      <h3 style="margin-top:0;">${m.loginSection}</h3>
       <div class="row">
-        <input id="token" type="password" placeholder="请输入 ADMIN_TOKEN" />
-        <button id="loginBtn">登录</button>
+        <input id="token" type="password" placeholder="${m.tokenPlaceholder}" />
+        <button id="loginBtn">${m.loginButton}</button>
       </div>
       <p id="loginMsg" class="muted" style="margin-top:8px;"></p>
     </section>
@@ -85,19 +93,26 @@ export function renderAdminPage(): string {
     <section class="card hidden" id="adminCard">
       <div class="row" style="justify-content:space-between;">
         <div class="row">
-          <h3 style="margin:0;">用户管理</h3>
-          <span class="badge">Admin Token Session</span>
+          <h3 style="margin:0;">${m.userManagement}</h3>
+          <span class="badge">${m.adminSession}</span>
         </div>
         <div class="row">
-          <button id="refreshBtn" class="secondary">刷新</button>
-          <button id="logoutBtn" class="secondary">退出</button>
+          <button id="refreshBtn" class="secondary">${m.refreshButton}</button>
+          <button id="logoutBtn" class="secondary">${m.logoutButton}</button>
         </div>
       </div>
       <p id="adminInfo" class="muted" style="margin-top:8px;"></p>
-      <div style="overflow:auto; margin-top:10px; max-height:580px;">
+      <section class="card hidden" id="initCard" style="margin-top:10px;">
+        <h4 style="margin:0 0 8px;">${m.initTitle}</h4>
+        <p class="muted" style="margin:0 0 10px;" id="initDesc">${m.initDescription}</p>
+        <div class="row">
+          <button id="initBtn">${m.initButton}</button>
+        </div>
+      </section>
+      <div id="usersTableWrap" style="overflow:auto; margin-top:10px; max-height:580px;">
         <table>
           <thead>
-            <tr><th>ID</th><th>用户名</th><th>创建时间</th><th>操作</th></tr>
+            <tr><th>${m.tableId}</th><th>${m.tableUsername}</th><th>${m.tableCreatedAt}</th><th>${m.tableActions}</th></tr>
           </thead>
           <tbody id="usersBody"></tbody>
         </table>
@@ -107,9 +122,12 @@ export function renderAdminPage(): string {
   </div>
 
   <script>
+    const I18N = ${i18nJson};
     const MS_PER_SECOND = 1000;
     const loginCard = document.getElementById('loginCard');
     const adminCard = document.getElementById('adminCard');
+    const initCard = document.getElementById('initCard');
+    const usersTableWrap = document.getElementById('usersTableWrap');
     const loginMsg = document.getElementById('loginMsg');
     const adminMsg = document.getElementById('adminMsg');
 
@@ -122,11 +140,32 @@ export function renderAdminPage(): string {
       el.className = 'muted ' + (text ? (isError ? 'err' : 'ok') : '');
     }
 
+    function isDbNotInitializedError(error) {
+      return Boolean(error && typeof error === 'object' && error.code === 'DB_NOT_INITIALIZED');
+    }
+
     async function jsonFetch(url, options = {}) {
       const res = await fetch(url, { ...options, headers: { 'content-type': 'application/json', ...(options.headers || {}) } });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || '请求失败');
+      if (!res.ok) {
+        const err = new Error(data.error || I18N.requestFailed);
+        err.code = data.code;
+        throw err;
+      }
       return data;
+    }
+
+    async function loadInitStatus() {
+      const status = await jsonFetch('/admin/init/status');
+      if (status.initialized) {
+        initCard.classList.add('hidden');
+        usersTableWrap.classList.remove('hidden');
+        await loadUsers();
+        return;
+      }
+      initCard.classList.remove('hidden');
+      usersTableWrap.classList.add('hidden');
+      setMessage(adminMsg, I18N.initRequired, true);
     }
 
     async function loadAdmin() {
@@ -134,9 +173,18 @@ export function renderAdminPage(): string {
         await jsonFetch('/admin/me');
         loginCard.classList.add('hidden');
         adminCard.classList.remove('hidden');
-        document.getElementById('adminInfo').textContent = '当前状态：已登录';
-        await loadUsers();
-      } catch {
+        document.getElementById('adminInfo').textContent = I18N.statusLoggedIn;
+        await loadInitStatus();
+      } catch (e) {
+        if (isDbNotInitializedError(e)) {
+          loginCard.classList.add('hidden');
+          adminCard.classList.remove('hidden');
+          document.getElementById('adminInfo').textContent = I18N.statusLoggedIn;
+          initCard.classList.remove('hidden');
+          usersTableWrap.classList.add('hidden');
+          setMessage(adminMsg, I18N.initRequired, true);
+          return;
+        }
         loginCard.classList.remove('hidden');
         adminCard.classList.add('hidden');
       }
@@ -154,9 +202,9 @@ export function renderAdminPage(): string {
           '<td>' + escapeHtml(item.username) + '</td>' +
           '<td>' + createdAt + '</td>' +
           '<td><div class="action-row">' +
-            '<input data-kind="password" type="password" aria-label="用户 ' + escapeHtml(item.username) + '（ID: ' + Number(item.id) + '）的新密码" placeholder="新密码（至少8位）" />' +
-            '<button data-kind="reset" data-id="' + Number(item.id) + '">重置密码</button>' +
-            '<button class="danger" data-kind="delete" data-id="' + Number(item.id) + '">删除用户</button>' +
+            '<input data-kind="password" type="password" aria-label="' + I18N.passwordAriaLabel + ' ' + escapeHtml(item.username) + '（ID: ' + Number(item.id) + '）" placeholder="' + I18N.passwordPlaceholder + '" />' +
+            '<button data-kind="reset" data-id="' + Number(item.id) + '">' + I18N.resetPasswordButton + '</button>' +
+            '<button class="danger" data-kind="delete" data-id="' + Number(item.id) + '">' + I18N.deleteUserButton + '</button>' +
           '</div></td>';
         tbody.appendChild(tr);
       }
@@ -166,7 +214,7 @@ export function renderAdminPage(): string {
       const token = document.getElementById('token').value;
       try {
         await jsonFetch('/admin/auth/login', { method: 'POST', body: JSON.stringify({ token }) });
-        setMessage(loginMsg, '登录成功', false);
+        setMessage(loginMsg, I18N.loginSuccess, false);
         await loadAdmin();
       } catch (e) {
         setMessage(loginMsg, e.message, true);
@@ -179,7 +227,17 @@ export function renderAdminPage(): string {
     });
 
     document.getElementById('refreshBtn').addEventListener('click', async () => {
-      try { await loadUsers(); } catch {}
+      try { await loadInitStatus(); } catch {}
+    });
+
+    document.getElementById('initBtn').addEventListener('click', async () => {
+      try {
+        await jsonFetch('/admin/init', { method: 'POST', body: '{}' });
+        setMessage(adminMsg, I18N.initSuccess, false);
+        await loadInitStatus();
+      } catch (e) {
+        setMessage(adminMsg, e.message, true);
+      }
     });
 
     document.getElementById('usersBody').addEventListener('click', async (event) => {
@@ -191,16 +249,16 @@ export function renderAdminPage(): string {
 
       try {
         if (kind === 'delete') {
-          if (!confirm('确认删除用户 #' + id + '？此操作会删除其会话与阅读数据。')) return;
+          if (!confirm(I18N.confirmDeletePrefix + id + I18N.confirmDeleteSuffix)) return;
           await jsonFetch('/admin/users/' + id, { method: 'DELETE' });
-          setMessage(adminMsg, '删除成功：#' + id, false);
+          setMessage(adminMsg, I18N.deleteSuccessPrefix + id, false);
         } else if (kind === 'reset') {
           const row = target.closest('tr');
           const input = row ? row.querySelector('input[data-kind="password"]') : null;
           const password = input ? input.value : '';
           await jsonFetch('/admin/users/' + id + '/password', { method: 'PUT', body: JSON.stringify({ password }) });
           if (input) input.value = '';
-          setMessage(adminMsg, '密码重置成功：#' + id, false);
+          setMessage(adminMsg, I18N.resetSuccessPrefix + id, false);
         }
         await loadUsers();
       } catch (e) {

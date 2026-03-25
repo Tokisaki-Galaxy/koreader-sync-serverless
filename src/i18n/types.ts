@@ -1,0 +1,68 @@
+export interface AdminMessages {
+  title: string;
+  heading: string;
+  subtitle: string;
+  loginSection: string;
+  tokenPlaceholder: string;
+  loginButton: string;
+  userManagement: string;
+  adminSession: string;
+  refreshButton: string;
+  logoutButton: string;
+  tableId: string;
+  tableUsername: string;
+  tableCreatedAt: string;
+  tableActions: string;
+  passwordPlaceholder: string;
+  passwordAriaLabel: string;
+  resetPasswordButton: string;
+  deleteUserButton: string;
+  requestFailed: string;
+  statusLoggedIn: string;
+  loginSuccess: string;
+  confirmDeletePrefix: string;
+  confirmDeleteSuffix: string;
+  deleteSuccessPrefix: string;
+  resetSuccessPrefix: string;
+  initTitle: string;
+  initDescription: string;
+  initButton: string;
+  initRequired: string;
+  initSuccess: string;
+}
+
+export interface UserMessages {
+  title: string;
+  heading: string;
+  subtitle: string;
+  loginSection: string;
+  usernamePlaceholder: string;
+  passwordPlaceholder: string;
+  loginButton: string;
+  loginSuccess: string;
+  statsTitle: string;
+  realtimeStats: string;
+  refreshButton: string;
+  logoutButton: string;
+  recordsTitle: string;
+  loadButton: string;
+  tableDocument: string;
+  tableProgress: string;
+  tableDevice: string;
+  tableDeviceId: string;
+  tableUpdatedAt: string;
+  requestFailed: string;
+  statTotalRecords: string;
+  statTotalDocuments: string;
+  statTotalDevices: string;
+  statActiveDays: string;
+  statAverageProgress: string;
+  statLastSync: string;
+  userPrefix: string;
+  deviceDistributionPrefix: string;
+}
+
+export interface LocaleMessages {
+  admin: AdminMessages;
+  user: UserMessages;
+}

@@ -1,4 +1,109 @@
 import type { Env, ProgressRow, UserRow } from "./types";
+import initMigrationSql from "../migrations/0001_init.sql";
+
+const REQUIRED_TABLES = ["users", "progress", "sessions"] as const;
+
+function splitSqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let current = "";
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let i = 0; i < sql.length; i++) {
+    const char = sql[i];
+    const next = sql[i + 1];
+
+    if (inLineComment) {
+      if (char === "\n") inLineComment = false;
+      current += char;
+      continue;
+    }
+
+    if (inBlockComment) {
+      current += char;
+      if (char === "*" && next === "/") {
+        current += next;
+        i++;
+        inBlockComment = false;
+      }
+      continue;
+    }
+
+    if (!inSingleQuote && !inDoubleQuote && char === "-" && next === "-") {
+      current += char + next;
+      i++;
+      inLineComment = true;
+      continue;
+    }
+
+    if (!inSingleQuote && !inDoubleQuote && char === "/" && next === "*") {
+      current += char + next;
+      i++;
+      inBlockComment = true;
+      continue;
+    }
+
+    if (char === "'" && !inDoubleQuote) {
+      if (inSingleQuote && next === "'") {
+        current += char + next;
+        i++;
+        continue;
+      }
+      inSingleQuote = !inSingleQuote;
+      current += char;
+      continue;
+    }
+
+    if (char === '"' && !inSingleQuote) {
+      if (inDoubleQuote && next === '"') {
+        current += char + next;
+        i++;
+        continue;
+      }
+      inDoubleQuote = !inDoubleQuote;
+      current += char;
+      continue;
+    }
+
+    if (char === ";" && !inSingleQuote && !inDoubleQuote) {
+      const statement = current.trim();
+      if (statement) statements.push(statement);
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  const tail = current.trim();
+  if (tail) statements.push(tail);
+  return statements;
+}
+
+export async function getDatabaseInitStatus(
+  env: Env
+): Promise<{ initialized: boolean; missingTables: Array<(typeof REQUIRED_TABLES)[number]> }> {
+  const checks = await Promise.all(
+    REQUIRED_TABLES.map(async (tableName) => {
+      const row = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .bind(tableName)
+        .first<{ name: string }>();
+      return row?.name ? null : tableName;
+    })
+  );
+  const missingTables = checks.filter((name) => name !== null);
+  return { initialized: missingTables.length === 0, missingTables };
+}
+
+export async function initializeDatabase(env: Env): Promise<void> {
+  const statements = splitSqlStatements(initMigrationSql);
+
+  for (const statement of statements) {
+    await env.DB.prepare(statement).run();
+  }
+}
 
 export async function findUserByUsername(
   env: Env,
