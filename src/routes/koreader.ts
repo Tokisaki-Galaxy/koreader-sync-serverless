@@ -36,12 +36,11 @@ router.post("/users/create", async (c) => {
   try {
     body = await c.req.json<RegisterRequest>();
   } catch (e) {
-    logError(c, "JSON Parse Error (/users/create)", e);
+    logError(c, "JSON Parse Error", e);
     return badRequest("Invalid JSON body");
   }
 
-  const username = body.username ?? "";
-  const password = body.password ?? "";
+  const { username = "", password = "" } = body;
   if (!isValidKeyField(username) || !isValidField(password)) {
     return c.json({ message: INVALID_REQUEST_MESSAGE }, 403);
   }
@@ -52,16 +51,22 @@ router.post("/users/create", async (c) => {
     return c.json({ username }, 201);
   } catch (error: any) {
     logError(c, "User Creation Failed", error);
-    
-    const isDuplicate = 
-      error?.message?.includes("UNIQUE") || 
-      JSON.stringify(error).includes("UNIQUE") ||
-      JSON.stringify(error?.cause).includes("UNIQUE");
+
+    const errorMsg = error?.message ? String(error.message).toUpperCase() : "";
+
+    let causeMsg = "";
+    if (error?.cause) {
+      causeMsg = typeof error.cause === 'string'
+        ? error.cause.toUpperCase()
+        : (error.cause.message ? String(error.cause.message).toUpperCase() : "");
+    }
+
+    const isDuplicate = errorMsg.includes("UNIQUE") || causeMsg.includes("UNIQUE");
 
     if (isDuplicate) {
       return c.json({ message: "Username is already registered." }, 402);
     }
-    
+
     const errMsg = (c.env.DEBUG === "1" || c.env.DEBUG === "true")
       ? `Creation failed: ${error?.message || "Unknown error"}`
       : "Username is already registered.";
@@ -86,7 +91,7 @@ router.put("/syncs/progress", async (c) => {
     logError(c, "Auth Check Error in PUT", e);
     return null;
   });
-  
+
   if (!auth) return c.json({ message: UNAUTHORIZED_MESSAGE }, 401);
 
   let body: ProgressUpdateRequest;

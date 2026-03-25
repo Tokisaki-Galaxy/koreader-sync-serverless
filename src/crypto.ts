@@ -1,5 +1,5 @@
 const encoder = new TextEncoder();
-const PBKDF2_ITERATIONS = 600000;
+const PBKDF2_ITERATIONS = 20000;
 
 async function pbkdf2(password: string, salt: string): Promise<string> {
   const keyMaterial = await crypto.subtle.importKey(
