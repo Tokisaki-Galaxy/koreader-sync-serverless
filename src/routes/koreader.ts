@@ -11,6 +11,25 @@ const DOCUMENT_MISSING_MESSAGE = "Field 'document' not provided.";
 const UNAUTHORIZED_MESSAGE = "Unauthorized";
 const REGISTRATION_DISABLED_MESSAGE = "User registration is disabled.";
 const INTERNAL_SERVER_ERROR_MESSAGE = "Internal server error";
+const DUPLICATE_USERNAME_REGEX = /unique constraint failed:\s*users\.username/i;
+
+function isDuplicateUsernameError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const err = error as { message?: unknown; code?: unknown; cause?: unknown };
+  const message = typeof err.message === "string" ? err.message : "";
+  const code = typeof err.code === "string" ? err.code : "";
+  const causeError = err.cause && typeof err.cause === "object"
+    ? (err.cause as { message?: unknown; code?: unknown })
+    : null;
+  const causeMessage = typeof causeError?.message === "string" ? causeError.message : "";
+  const causeCode = typeof causeError?.code === "string" ? causeError.code : "";
+  return (
+    code === "SQLITE_CONSTRAINT_UNIQUE" ||
+    causeCode === "SQLITE_CONSTRAINT_UNIQUE" ||
+    DUPLICATE_USERNAME_REGEX.test(message) ||
+    DUPLICATE_USERNAME_REGEX.test(causeMessage)
+  );
+}
 
 function isRegistrationEnabled(env: Env): boolean {
   const flag = env.ENABLE_USER_REGISTRATION;
@@ -41,8 +60,7 @@ router.post("/users/create", async (c) => {
     await createUser(c.env, username, passwordHash);
     return c.json({ username }, 201);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "";
-    if (/unique constraint failed:\s*users\.username/i.test(errorMessage)) {
+    if (isDuplicateUsernameError(error)) {
       return c.json({ message: "Username is already registered." }, 402);
     }
     return c.json({ message: INTERNAL_SERVER_ERROR_MESSAGE }, 500);
