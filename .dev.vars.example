@@ -1,0 +1,3 @@
+PASSWORD_PEPPER=please_use_a_long_random_secret
+SESSION_TTL_HOURS=168
+ADMIN_TOKEN=please_set_a_strong_admin_token
