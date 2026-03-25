@@ -18,8 +18,8 @@ router.post("/users/create", async (c) => {
     return badRequest("Invalid JSON body");
   }
 
-  const username = body.username;
-  const password = body.password;
+  const username = body.username ?? "";
+  const password = body.password ?? "";
   if (!isValidKeyField(username) || !isValidField(password)) {
     return c.json({ message: INVALID_REQUEST_MESSAGE }, 403);
   }
