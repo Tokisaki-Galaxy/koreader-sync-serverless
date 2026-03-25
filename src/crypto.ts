@@ -14,7 +14,7 @@ async function pbkdf2(password: string, salt: string, iterations: number = DEFAU
     {
       name: "PBKDF2",
       salt: encoder.encode(salt),
-      // OWASP recommends high PBKDF2 iteration counts for SHA-256; use 600k for stronger offline resistance.
+      // OWASP recommends high PBKDF2 iteration counts for SHA-256; default to 20k unless overridden via config.
       iterations,
       hash: "SHA-256",
     },

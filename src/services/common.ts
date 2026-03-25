@@ -14,8 +14,8 @@ export function parseSessionTtlHours(env: Env): number {
 
 export function parsePbkdf2Iterations(env: Env): number {
   const value = Number(env.PBKDF2_ITERATIONS ?? "20000");
-  if (!Number.isFinite(value) || value <= 0) return 20000;
-  return Math.floor(value);
+  if (!Number.isFinite(value) || value <= 0 || !Number.isInteger(value)) return 20000;
+  return value;
 }
 
 export function isValidUsername(username: string): boolean {
