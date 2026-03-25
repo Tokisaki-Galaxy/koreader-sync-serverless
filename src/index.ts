@@ -16,7 +16,7 @@ app.route("/", koreaderRoutes);
 app.route("/", userRoutes);
 app.route("/", adminRoutes);
 
+app.get("/healthcheck", (c) => c.json({ state: "OK" }));
 app.get("/health", (c) => c.json({ status: "ok" }));
 
 export default app;
-

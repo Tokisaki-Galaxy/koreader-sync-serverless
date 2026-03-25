@@ -2,10 +2,21 @@ import { Hono } from "hono";
 import { createUser, getLatestProgressByDocument, upsertProgress } from "../db";
 import { hashPassword } from "../crypto";
 import { authKoreader } from "../services/auth";
-import { badRequest, isValidPassword, isValidUsername } from "../services/common";
+import { badRequest } from "../services/common";
 import type { Env, ProgressUpdateRequest, RegisterRequest } from "../types";
 
 const router = new Hono<{ Bindings: Env }>();
+const INVALID_REQUEST_MESSAGE = "Invalid request";
+const DOCUMENT_MISSING_MESSAGE = "Field 'document' not provided.";
+const UNAUTHORIZED_MESSAGE = "Unauthorized";
+
+function isValidField(field: unknown): field is string {
+  return typeof field === "string" && field.length > 0;
+}
+
+function isValidKeyField(field: unknown): field is string {
+  return isValidField(field) && !field.includes(":");
+}
 
 router.post("/users/create", async (c) => {
   let body: RegisterRequest;
@@ -15,10 +26,10 @@ router.post("/users/create", async (c) => {
     return badRequest("Invalid JSON body");
   }
 
-  const username = (body.username || "").trim();
-  const password = body.password || "";
-  if (!isValidUsername(username) || !isValidPassword(password)) {
-    return badRequest("Invalid username or password");
+  const username = body.username;
+  const password = body.password;
+  if (!isValidKeyField(username) || !isValidField(password)) {
+    return c.json({ message: INVALID_REQUEST_MESSAGE }, 403);
   }
 
   try {
@@ -26,19 +37,19 @@ router.post("/users/create", async (c) => {
     await createUser(c.env, username, passwordHash);
     return c.json({ username }, 201);
   } catch {
-    return c.json({ error: "Username already exists" }, 402);
+    return c.json({ message: "Username is already registered." }, 402);
   }
 });
 
 router.get("/users/auth", async (c) => {
   const auth = await authKoreader(c);
-  if (!auth) return c.json({ error: "Invalid credentials" }, 401);
+  if (!auth) return c.json({ message: UNAUTHORIZED_MESSAGE }, 401);
   return c.json({ authorized: "OK" });
 });
 
 router.put("/syncs/progress", async (c) => {
   const auth = await authKoreader(c);
-  if (!auth) return c.json({ error: "Invalid credentials" }, 401);
+  if (!auth) return c.json({ message: UNAUTHORIZED_MESSAGE }, 401);
 
   let body: ProgressUpdateRequest;
   try {
@@ -48,8 +59,11 @@ router.put("/syncs/progress", async (c) => {
   }
 
   const { document, progress, percentage, device, device_id } = body;
+  if (!isValidKeyField(document)) {
+    return c.json({ message: DOCUMENT_MISSING_MESSAGE }, 403);
+  }
   if (!document || !progress || typeof percentage !== "number" || !device) {
-    return badRequest("Missing required fields");
+    return c.json({ message: INVALID_REQUEST_MESSAGE }, 403);
   }
 
   const timestamp = Math.floor(Date.now() / 1000);
@@ -64,19 +78,18 @@ router.put("/syncs/progress", async (c) => {
 
   return c.json({
     document,
-    progress,
-    percentage,
-    device,
-    ...(device_id !== undefined ? { device_id } : {}),
     timestamp,
   });
 });
 
 router.get("/syncs/progress/:document", async (c) => {
   const auth = await authKoreader(c);
-  if (!auth) return c.json({ error: "Invalid credentials" }, 401);
+  if (!auth) return c.json({ message: UNAUTHORIZED_MESSAGE }, 401);
 
   const document = c.req.param("document");
+  if (!isValidKeyField(document)) {
+    return c.json({ message: DOCUMENT_MISSING_MESSAGE }, 403);
+  }
   const row = await getLatestProgressByDocument(c.env, auth.userId, document);
   // KOReader compatibility: official server returns 200 with empty object when no progress exists.
   if (!row) return c.json({});
