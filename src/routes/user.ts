@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { deleteCookie, setCookie, getCookie } from "hono/cookie";
 import { findUserByUsername } from "../db";
 import { md5 } from "js-md5";
-import { generateSessionToken, hashPassword, sha256, verifyPassword } from "../crypto";
+import { generateSessionToken, sha256, verifyPassword } from "../crypto";
 import { pickLocale } from "../i18n";
 import { authWebUser, USER_SESSION_COOKIE } from "../services/auth";
 import { badRequest, parseSessionTtlHours } from "../services/common";
@@ -26,18 +26,7 @@ router.post("/web/auth/login", async (c) => {
 
   const md5HashedPassword = md5(password);
   const ok = await verifyPassword(md5HashedPassword, user.username, c.env.PASSWORD_PEPPER, user.password_hash);
-  if (!ok) {
-    const legacyOk = await verifyPassword(password, user.username, c.env.PASSWORD_PEPPER, user.password_hash);
-    if (!legacyOk) return c.json({ error: "Invalid credentials" }, 401);
-    const upgradedHash = await hashPassword(md5HashedPassword, user.username, c.env.PASSWORD_PEPPER);
-    try {
-      await c.env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?")
-        .bind(upgradedHash, user.id)
-        .run();
-    } catch (error) {
-      console.error("Failed to upgrade legacy password hash", error);
-    }
-  }
+  if (!ok) return c.json({ error: "Invalid credentials" }, 401);
 
   const token = generateSessionToken();
   const tokenHash = await sha256(`${token}:${c.env.PASSWORD_PEPPER}`);
