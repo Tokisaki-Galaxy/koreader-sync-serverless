@@ -3,6 +3,7 @@ export interface Env {
   PASSWORD_PEPPER: string;
   DEBUG?: string;
   SESSION_TTL_HOURS?: string;
+  PBKDF2_ITERATIONS?: string;
   ADMIN_TOKEN?: string;
   ENABLE_USER_REGISTRATION?: string;
 }

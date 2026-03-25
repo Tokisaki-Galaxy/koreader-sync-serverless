@@ -5,7 +5,7 @@ import { deleteUserById, getDatabaseInitStatus, initializeDatabase, listUsers, u
 import { hashPassword, sha256 } from "../crypto";
 import { getMessages, pickLocale } from "../i18n";
 import { ADMIN_SESSION_COOKIE, authAdmin, timingSafeEqual } from "../services/auth";
-import { badRequest, isValidPassword, parseSessionTtlHours } from "../services/common";
+import { badRequest, isValidPassword, parsePbkdf2Iterations, parseSessionTtlHours } from "../services/common";
 import { renderAdminPage } from "../ui/adminPage";
 import type { Env } from "../types";
 
@@ -95,7 +95,8 @@ router.put("/admin/users/:id/password", async (c) => {
   const user = await c.env.DB.prepare("SELECT username FROM users WHERE id = ?").bind(userId).first<{ username: string }>();
   if (!user) return c.json({ error: "User not found" }, 404);
 
-  const passwordHash = await hashPassword(md5(newPassword), user.username, c.env.PASSWORD_PEPPER);
+  const iterations = parsePbkdf2Iterations(c.env);
+  const passwordHash = await hashPassword(md5(newPassword), user.username, c.env.PASSWORD_PEPPER, iterations);
   const updated = await updateUserPasswordById(c.env, userId, passwordHash);
   if (!updated) return c.json({ error: "User not found" }, 404);
   await c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId).run();

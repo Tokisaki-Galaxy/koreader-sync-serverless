@@ -1,7 +1,7 @@
 const encoder = new TextEncoder();
-const PBKDF2_ITERATIONS = 20000;
+export const DEFAULT_PBKDF2_ITERATIONS = 20000;
 
-async function pbkdf2(password: string, salt: string): Promise<string> {
+async function pbkdf2(password: string, salt: string, iterations: number = DEFAULT_PBKDF2_ITERATIONS): Promise<string> {
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
     encoder.encode(password),
@@ -14,8 +14,8 @@ async function pbkdf2(password: string, salt: string): Promise<string> {
     {
       name: "PBKDF2",
       salt: encoder.encode(salt),
-      // OWASP recommends high PBKDF2 iteration counts for SHA-256; use 600k for stronger offline resistance.
-      iterations: PBKDF2_ITERATIONS,
+      // OWASP recommends higher PBKDF2 iteration counts for SHA-256; default to 20k for perf/compatibility unless overridden.
+      iterations,
       hash: "SHA-256",
     },
     keyMaterial,
@@ -30,18 +30,20 @@ async function pbkdf2(password: string, salt: string): Promise<string> {
 export async function hashPassword(
   password: string,
   username: string,
-  pepper: string
+  pepper: string,
+  iterations: number = DEFAULT_PBKDF2_ITERATIONS
 ): Promise<string> {
-  return pbkdf2(password, `${username}:${pepper}`);
+  return pbkdf2(password, `${username}:${pepper}`, iterations);
 }
 
 export async function verifyPassword(
   password: string,
   username: string,
   pepper: string,
-  storedHash: string
+  storedHash: string,
+  iterations: number = DEFAULT_PBKDF2_ITERATIONS
 ): Promise<boolean> {
-  const digest = await hashPassword(password, username, pepper);
+  const digest = await hashPassword(password, username, pepper, iterations);
   return digest === storedHash;
 }
 

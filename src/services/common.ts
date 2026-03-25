@@ -1,3 +1,4 @@
+import { DEFAULT_PBKDF2_ITERATIONS } from "../crypto";
 import type { Env } from "../types";
 
 export function badRequest(message: string) {
@@ -10,6 +11,14 @@ export function badRequest(message: string) {
 export function parseSessionTtlHours(env: Env): number {
   const value = Number(env.SESSION_TTL_HOURS ?? "168");
   return Number.isFinite(value) && value > 0 ? value : 168;
+}
+
+export function parsePbkdf2Iterations(env: Env): number {
+  const value = Number(env.PBKDF2_ITERATIONS ?? DEFAULT_PBKDF2_ITERATIONS);
+  if (!Number.isFinite(value) || !Number.isInteger(value)) {
+    return DEFAULT_PBKDF2_ITERATIONS;
+  }
+  return value;
 }
 
 export function isValidUsername(username: string): boolean {
@@ -30,4 +39,3 @@ export function withSecurityHeaders(headers: Headers): Headers {
   );
   return headers;
 }
-
