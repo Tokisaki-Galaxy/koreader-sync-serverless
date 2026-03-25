@@ -134,8 +134,11 @@ npm run dev
 
 ## Runtime Configuration
 
+REQUIRED environment variables:
 - `PASSWORD_PEPPER`: required strong secret for password/session hashing
-- `SESSION_TTL_HOURS`: optional session lifetime in hours, default `168`
 - `ADMIN_TOKEN`: required for admin web login
+- `SESSION_TTL_HOURS`: optional session lifetime in hours, default `168`
+OPTIONAL environment variables:
 - `DEBUG`: optional (`"1"`/`"true"` enables debug error logs)
-- `PBKDF2_ITERATIONS`: optional PBKDF2 iteration count override (minimum/default `20000`)
+- `PBKDF2_ITERATIONS`: optional number of iterations for PBKDF2 hashing, default `20000` (adjust based on your performance/security needs)
+- `ENABLE_USER_REGISTRATION`: optional (`"1"`/`"true"` to allow user self-registration, default is open registration)
