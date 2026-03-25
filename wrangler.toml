@@ -1,4 +1,4 @@
-name = "koreader-sync"
+name = "koreader-sync-serverless"
 main = "src/index.ts"
 compatibility_date = "2026-03-25"
 
