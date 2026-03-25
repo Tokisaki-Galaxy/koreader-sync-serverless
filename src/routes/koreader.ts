@@ -78,6 +78,7 @@ router.get("/syncs/progress/:document", async (c) => {
 
   const document = c.req.param("document");
   const row = await getLatestProgressByDocument(c.env, auth.userId, document);
+  // KOReader compatibility: official server returns 200 with empty object when no progress exists.
   if (!row) return c.json({});
 
   return c.json({
