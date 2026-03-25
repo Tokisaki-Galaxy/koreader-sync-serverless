@@ -10,11 +10,11 @@ export const USER_SESSION_COOKIE = "ks_session";
 export const ADMIN_SESSION_COOKIE = "ks_admin_session";
 const TIMING_COMPARE_STEPS = 256;
 
-function isValidField(field: unknown): field is string {
+export function isValidField(field: unknown): field is string {
   return typeof field === "string" && field.length > 0;
 }
 
-function isValidKeyField(field: unknown): field is string {
+export function isValidKeyField(field: unknown): field is string {
   return isValidField(field) && !field.includes(":");
 }
 

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { createUser, getLatestProgressByDocument, upsertProgress } from "../db";
 import { hashPassword } from "../crypto";
-import { authKoreader } from "../services/auth";
+import { authKoreader, isValidField, isValidKeyField } from "../services/auth";
 import { badRequest } from "../services/common";
 import type { Env, ProgressUpdateRequest, RegisterRequest } from "../types";
 
@@ -9,14 +9,6 @@ const router = new Hono<{ Bindings: Env }>();
 const INVALID_REQUEST_MESSAGE = "Invalid request";
 const DOCUMENT_MISSING_MESSAGE = "Field 'document' not provided.";
 const UNAUTHORIZED_MESSAGE = "Unauthorized";
-
-function isValidField(field: unknown): field is string {
-  return typeof field === "string" && field.length > 0;
-}
-
-function isValidKeyField(field: unknown): field is string {
-  return isValidField(field) && !field.includes(":");
-}
 
 router.post("/users/create", async (c) => {
   let body: RegisterRequest;
@@ -62,7 +54,7 @@ router.put("/syncs/progress", async (c) => {
   if (!isValidKeyField(document)) {
     return c.json({ message: DOCUMENT_MISSING_MESSAGE }, 403);
   }
-  if (!document || !progress || typeof percentage !== "number" || !device) {
+  if (!progress || typeof percentage !== "number" || !device) {
     return c.json({ message: INVALID_REQUEST_MESSAGE }, 403);
   }
 
