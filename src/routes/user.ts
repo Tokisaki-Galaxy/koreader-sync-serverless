@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { deleteCookie, setCookie, getCookie } from "hono/cookie";
 import { findUserByUsername } from "../db";
 import { generateSessionToken, sha256, verifyPassword } from "../crypto";
+import { pickLocale } from "../i18n";
 import { authWebUser, USER_SESSION_COOKIE } from "../services/auth";
 import { badRequest, parseSessionTtlHours } from "../services/common";
 import { renderUserPage } from "../ui/userPage";
@@ -130,6 +131,9 @@ router.get("/web/stats", async (c) => {
   });
 });
 
-router.get("/", (c) => c.html(renderUserPage()));
+router.get("/", (c) => {
+  const locale = pickLocale(c.req.header("accept-language"));
+  return c.html(renderUserPage(locale));
+});
 
 export default router;

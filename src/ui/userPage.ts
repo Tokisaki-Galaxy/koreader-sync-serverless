@@ -1,10 +1,18 @@
-export function renderUserPage(): string {
+import { getMessages, type Locale } from "../i18n";
+
+function toScriptJson(value: unknown): string {
+  return JSON.stringify(value).replaceAll("<", "\\u003c");
+}
+
+export function renderUserPage(locale: Locale): string {
+  const m = getMessages(locale).user;
+  const i18nJson = toScriptJson(m);
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${locale}">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>KOReader Sync · 用户中心</title>
+  <title>${m.title}</title>
   <style>
     :root {
       --bg1: #0f172a;
@@ -101,15 +109,15 @@ export function renderUserPage(): string {
 </head>
 <body>
   <div class="wrap">
-    <h1 class="title">KOReader Sync</h1>
-    <p class="subtitle">用户中心 · 使用 Kindle 注册账户登录查看个人统计与阅读记录</p>
+    <h1 class="title">${m.heading}</h1>
+    <p class="subtitle">${m.subtitle}</p>
 
     <section class="card" id="loginCard">
-      <h3 style="margin-top:0;">登录</h3>
+      <h3 style="margin-top:0;">${m.loginSection}</h3>
       <div class="row">
-        <input id="username" placeholder="用户名" />
-        <input id="password" type="password" placeholder="密码" />
-        <button id="loginBtn">登录</button>
+        <input id="username" placeholder="${m.usernamePlaceholder}" />
+        <input id="password" type="password" placeholder="${m.passwordPlaceholder}" />
+        <button id="loginBtn">${m.loginButton}</button>
       </div>
       <p id="loginMsg" class="muted" style="margin-top:8px;"></p>
     </section>
@@ -117,13 +125,13 @@ export function renderUserPage(): string {
     <section class="card hidden" id="dashboardCard">
       <div class="row" style="justify-content:space-between;">
         <div>
-          <h3 style="margin:0;">个人统计</h3>
+          <h3 style="margin:0;">${m.statsTitle}</h3>
           <p id="userInfo" class="muted"></p>
         </div>
         <div class="row">
-          <span class="pill">实时统计</span>
-          <button id="refreshStatsBtn" class="secondary">刷新</button>
-          <button id="logoutBtn" class="secondary">退出</button>
+          <span class="pill">${m.realtimeStats}</span>
+          <button id="refreshStatsBtn" class="secondary">${m.refreshButton}</button>
+          <button id="logoutBtn" class="secondary">${m.logoutButton}</button>
         </div>
       </div>
       <div class="stats" id="statsGrid" style="margin-top:10px;"></div>
@@ -132,17 +140,17 @@ export function renderUserPage(): string {
 
     <section class="card hidden" id="recordsCard">
       <div class="row" style="justify-content:space-between;">
-        <h3 style="margin:0;">阅读记录</h3>
+        <h3 style="margin:0;">${m.recordsTitle}</h3>
         <div class="row">
           <input id="page" type="number" value="1" min="1" style="width:88px; min-width:88px;" />
           <input id="pageSize" type="number" value="20" min="1" max="100" style="width:100px; min-width:100px;" />
-          <button id="loadBtn">加载</button>
+          <button id="loadBtn">${m.loadButton}</button>
         </div>
       </div>
       <div style="overflow:auto; margin-top:10px; max-height:520px;">
         <table>
           <thead>
-            <tr><th>文档</th><th>进度</th><th>设备</th><th>设备ID</th><th>更新时间</th></tr>
+            <tr><th>${m.tableDocument}</th><th>${m.tableProgress}</th><th>${m.tableDevice}</th><th>${m.tableDeviceId}</th><th>${m.tableUpdatedAt}</th></tr>
           </thead>
           <tbody id="recordsBody"></tbody>
         </table>
@@ -151,6 +159,7 @@ export function renderUserPage(): string {
   </div>
 
   <script>
+    const I18N = ${i18nJson};
     const MS_PER_SECOND = 1000;
     const loginCard = document.getElementById('loginCard');
     const dashboardCard = document.getElementById('dashboardCard');
@@ -164,7 +173,7 @@ export function renderUserPage(): string {
     async function jsonFetch(url, options = {}) {
       const res = await fetch(url, { ...options, headers: { 'content-type': 'application/json', ...(options.headers || {}) } });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || '请求失败');
+      if (!res.ok) throw new Error(data.error || I18N.requestFailed);
       return data;
     }
 
@@ -175,12 +184,12 @@ export function renderUserPage(): string {
 
     function renderStats(summary) {
       const items = [
-        ['总记录数', Number(summary.totalRecords || 0)],
-        ['文档数', Number(summary.totalDocuments || 0)],
-        ['设备数', Number(summary.totalDevices || 0)],
-        ['活跃天数', Number(summary.activeDays || 0)],
-        ['平均进度', (Number(summary.averagePercentage || 0) * 100).toFixed(2) + '%'],
-        ['最后同步', summary.lastSyncAt ? new Date(summary.lastSyncAt * MS_PER_SECOND).toLocaleString() : '-'],
+          [I18N.statTotalRecords, Number(summary.totalRecords || 0)],
+          [I18N.statTotalDocuments, Number(summary.totalDocuments || 0)],
+          [I18N.statTotalDevices, Number(summary.totalDevices || 0)],
+          [I18N.statActiveDays, Number(summary.activeDays || 0)],
+          [I18N.statAverageProgress, (Number(summary.averagePercentage || 0) * 100).toFixed(2) + '%'],
+          [I18N.statLastSync, summary.lastSyncAt ? new Date(summary.lastSyncAt * MS_PER_SECOND).toLocaleString() : '-'],
       ];
       const html = items.map(([k, v]) => '<div class="stat"><div class="k">' + escapeHtml(k) + '</div><div class="v">' + escapeHtml(v) + '</div></div>').join('');
       document.getElementById('statsGrid').innerHTML = html;
@@ -189,7 +198,7 @@ export function renderUserPage(): string {
     async function loadMe() {
       try {
         const me = await jsonFetch('/web/me');
-        document.getElementById('userInfo').textContent = '用户：' + me.username + '（ID: ' + me.id + '）';
+        document.getElementById('userInfo').textContent = I18N.userPrefix + me.username + '（ID: ' + me.id + '）';
         loginCard.classList.add('hidden');
         dashboardCard.classList.remove('hidden');
         recordsCard.classList.remove('hidden');
@@ -205,7 +214,7 @@ export function renderUserPage(): string {
       const data = await jsonFetch('/web/stats');
       renderStats(data.summary || {});
       const devices = (data.devices || []).map(d => String(d.device) + ': ' + Number(d.count)).join(' / ') || '-';
-      document.getElementById('deviceSummary').textContent = '设备分布：' + devices;
+      document.getElementById('deviceSummary').textContent = I18N.deviceDistributionPrefix + devices;
     }
 
     async function loadRecords() {
@@ -232,7 +241,7 @@ export function renderUserPage(): string {
       const password = document.getElementById('password').value;
       try {
         await jsonFetch('/web/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) });
-        setMessage(loginMsg, '登录成功', false);
+        setMessage(loginMsg, I18N.loginSuccess, false);
         await loadMe();
       } catch (e) {
         setMessage(loginMsg, e.message, true);
@@ -257,4 +266,3 @@ export function renderUserPage(): string {
 </body>
 </html>`;
 }
-

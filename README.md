@@ -36,6 +36,8 @@ A KOReader sync service built with **Cloudflare Worker + D1**, including:
 - `POST /admin/auth/login` admin login with `{ "token": "..." }`
 - `POST /admin/auth/logout` admin logout
 - `GET /admin/me` current admin session status
+- `GET /admin/init/status` check whether required tables exist
+- `POST /admin/init` initialize required database tables and indexes
 - `GET /admin/users` list users
 - `DELETE /admin/users/:id` delete user
 - `PUT /admin/users/:id/password` force reset user password
@@ -70,6 +72,8 @@ npx wrangler d1 create koreader-sync-db
 npx wrangler d1 migrations apply koreader-sync-db --local
 ```
 
+> You can also login to `/admin` first and use the “Initialize database” button when required tables are missing.
+
 5. Start dev server:
 
 ```bash
@@ -90,6 +94,8 @@ npx wrangler secret put ADMIN_TOKEN
 ```bash
 npx wrangler d1 migrations apply koreader-sync-db --remote
 ```
+
+> If migrations are skipped, admins can initialize required tables from `/admin` after login.
 
 3. Deploy Worker:
 

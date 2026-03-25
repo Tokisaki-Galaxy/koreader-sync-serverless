@@ -1,5 +1,63 @@
 import type { Env, ProgressRow, UserRow } from "./types";
 
+const REQUIRED_TABLES = ["users", "progress", "sessions"] as const;
+
+export async function getDatabaseInitStatus(
+  env: Env
+): Promise<{ initialized: boolean; missingTables: Array<(typeof REQUIRED_TABLES)[number]> }> {
+  const checks = await Promise.all(
+    REQUIRED_TABLES.map(async (tableName) => {
+      const row = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .bind(tableName)
+        .first<{ name: string }>();
+      return row?.name ? null : tableName;
+    })
+  );
+  const missingTables = checks.filter((name) => name !== null);
+  return { initialized: missingTables.length === 0, missingTables };
+}
+
+export async function initializeDatabase(env: Env): Promise<void> {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    )`
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS progress (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      document TEXT NOT NULL,
+      progress TEXT NOT NULL,
+      percentage REAL NOT NULL,
+      device TEXT NOT NULL,
+      device_id TEXT NOT NULL DEFAULT '',
+      timestamp INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      UNIQUE(user_id, document)
+    )`
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    )`
+  ).run();
+
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_progress_user_timestamp ON progress(user_id, timestamp DESC)").run();
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_progress_user_device ON progress(user_id, device)").run();
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)").run();
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)").run();
+}
+
 export async function findUserByUsername(
   env: Env,
   username: string
