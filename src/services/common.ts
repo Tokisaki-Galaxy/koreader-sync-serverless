@@ -15,7 +15,7 @@ export function parseSessionTtlHours(env: Env): number {
 
 export function parsePbkdf2Iterations(env: Env): number {
   const value = Number(env.PBKDF2_ITERATIONS ?? DEFAULT_PBKDF2_ITERATIONS);
-  if (!Number.isFinite(value) || !Number.isInteger(value) || value < DEFAULT_PBKDF2_ITERATIONS) {
+  if (!Number.isFinite(value) || !Number.isInteger(value)) {
     return DEFAULT_PBKDF2_ITERATIONS;
   }
   return value;
