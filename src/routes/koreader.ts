@@ -48,7 +48,7 @@ router.put("/syncs/progress", async (c) => {
   }
 
   const { document, progress, percentage, device, device_id } = body;
-  if (!document || !progress || typeof percentage !== "number" || !device || !device_id) {
+  if (!document || !progress || typeof percentage !== "number" || !device) {
     return badRequest("Missing required fields");
   }
 
@@ -58,11 +58,18 @@ router.put("/syncs/progress", async (c) => {
     progress,
     percentage,
     device,
-    device_id,
+    device_id: device_id ?? "",
     timestamp,
   });
 
-  return c.json({ status: "success" });
+  return c.json({
+    document,
+    progress,
+    percentage,
+    device,
+    ...(device_id !== undefined ? { device_id } : {}),
+    timestamp,
+  });
 });
 
 router.get("/syncs/progress/:document", async (c) => {
@@ -71,8 +78,16 @@ router.get("/syncs/progress/:document", async (c) => {
 
   const document = c.req.param("document");
   const row = await getLatestProgressByDocument(c.env, auth.userId, document);
-  if (!row) return c.json({ status: "not found" }, 404);
-  return c.json(row);
+  if (!row) return c.json({});
+
+  return c.json({
+    document,
+    progress: row.progress,
+    percentage: row.percentage,
+    device: row.device,
+    ...(row.device_id ? { device_id: row.device_id } : {}),
+    timestamp: row.timestamp,
+  });
 });
 
 export default router;

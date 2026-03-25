@@ -35,5 +35,5 @@ export interface ProgressUpdateRequest {
   progress: string;
   percentage: number;
   device: string;
-  device_id: string;
+  device_id?: string;
 }
