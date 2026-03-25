@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { deleteCookie, setCookie, getCookie } from "hono/cookie";
 import { findUserByUsername } from "../db";
+import { md5 } from "js-md5";
 import { generateSessionToken, sha256, verifyPassword } from "../crypto";
 import { pickLocale } from "../i18n";
 import { authWebUser, USER_SESSION_COOKIE } from "../services/auth";
@@ -23,7 +24,8 @@ router.post("/web/auth/login", async (c) => {
   const user = await findUserByUsername(c.env, username);
   if (!user) return c.json({ error: "Invalid credentials" }, 401);
 
-  const ok = await verifyPassword(password, user.username, c.env.PASSWORD_PEPPER, user.password_hash);
+  const md5HashedPassword = md5(password);
+  const ok = await verifyPassword(md5HashedPassword, user.username, c.env.PASSWORD_PEPPER, user.password_hash);
   if (!ok) return c.json({ error: "Invalid credentials" }, 401);
 
   const token = generateSessionToken();

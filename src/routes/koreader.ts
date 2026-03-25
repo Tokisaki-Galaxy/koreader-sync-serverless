@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { createUser, getLatestProgressByDocument, upsertProgress } from "../db";
+import { md5 } from "js-md5";
 import { hashPassword } from "../crypto";
 import { authKoreader, isValidField, isValidKeyField } from "../services/auth";
 import { badRequest } from "../services/common";
@@ -46,7 +47,7 @@ router.post("/users/create", async (c) => {
   }
 
   try {
-    const passwordHash = await hashPassword(password, username, c.env.PASSWORD_PEPPER);
+    const passwordHash = await hashPassword(md5(password), username, c.env.PASSWORD_PEPPER);
     await createUser(c.env, username, passwordHash);
     return c.json({ username }, 201);
   } catch (error: any) {

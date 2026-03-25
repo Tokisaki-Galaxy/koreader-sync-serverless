@@ -1,6 +1,7 @@
 export interface Env {
   DB: D1Database;
   PASSWORD_PEPPER: string;
+  DEBUG?: string;
   SESSION_TTL_HOURS?: string;
   ADMIN_TOKEN?: string;
   ENABLE_USER_REGISTRATION?: string;
