@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { deleteCookie, setCookie } from "hono/cookie";
+import { md5 } from "js-md5";
 import { deleteUserById, getDatabaseInitStatus, initializeDatabase, listUsers, updateUserPasswordById } from "../db";
 import { hashPassword, sha256 } from "../crypto";
 import { getMessages, pickLocale } from "../i18n";
@@ -94,7 +95,7 @@ router.put("/admin/users/:id/password", async (c) => {
   const user = await c.env.DB.prepare("SELECT username FROM users WHERE id = ?").bind(userId).first<{ username: string }>();
   if (!user) return c.json({ error: "User not found" }, 404);
 
-  const passwordHash = await hashPassword(newPassword, user.username, c.env.PASSWORD_PEPPER);
+  const passwordHash = await hashPassword(md5(newPassword), user.username, c.env.PASSWORD_PEPPER);
   const updated = await updateUserPasswordById(c.env, userId, passwordHash);
   if (!updated) return c.json({ error: "User not found" }, 404);
   await c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId).run();
