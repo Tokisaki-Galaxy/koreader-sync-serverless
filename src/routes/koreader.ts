@@ -10,6 +10,7 @@ const INVALID_REQUEST_MESSAGE = "Invalid request";
 const DOCUMENT_MISSING_MESSAGE = "Field 'document' not provided.";
 const UNAUTHORIZED_MESSAGE = "Unauthorized";
 const REGISTRATION_DISABLED_MESSAGE = "User registration is disabled.";
+const INTERNAL_SERVER_ERROR_MESSAGE = "Internal server error";
 
 function isRegistrationEnabled(env: Env): boolean {
   const flag = env.ENABLE_USER_REGISTRATION;
@@ -39,8 +40,12 @@ router.post("/users/create", async (c) => {
     const passwordHash = await hashPassword(password, username, c.env.PASSWORD_PEPPER);
     await createUser(c.env, username, passwordHash);
     return c.json({ username }, 201);
-  } catch {
-    return c.json({ message: "Username is already registered." }, 402);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "";
+    if (/unique constraint failed:\s*users\.username/i.test(errorMessage)) {
+      return c.json({ message: "Username is already registered." }, 402);
+    }
+    return c.json({ message: INTERNAL_SERVER_ERROR_MESSAGE }, 500);
   }
 });
 
