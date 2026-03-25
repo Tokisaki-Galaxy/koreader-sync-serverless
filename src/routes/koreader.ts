@@ -3,7 +3,7 @@ import { createUser, getLatestProgressByDocument, upsertProgress } from "../db";
 import { md5 } from "js-md5";
 import { hashPassword } from "../crypto";
 import { authKoreader, isValidField, isValidKeyField } from "../services/auth";
-import { badRequest } from "../services/common";
+import { badRequest, parsePbkdf2Iterations } from "../services/common";
 import type { Env, ProgressUpdateRequest, RegisterRequest } from "../types";
 
 const router = new Hono<{ Bindings: Env }>();
@@ -47,7 +47,8 @@ router.post("/users/create", async (c) => {
   }
 
   try {
-    const passwordHash = await hashPassword(md5(password), username, c.env.PASSWORD_PEPPER);
+    const iterations = parsePbkdf2Iterations(c.env);
+    const passwordHash = await hashPassword(md5(password), username, c.env.PASSWORD_PEPPER, iterations);
     await createUser(c.env, username, passwordHash);
     return c.json({ username }, 201);
   } catch (error: any) {

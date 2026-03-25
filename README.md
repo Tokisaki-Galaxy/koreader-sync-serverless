@@ -138,3 +138,4 @@ npm run dev
 - `SESSION_TTL_HOURS`: optional session lifetime in hours, default `168`
 - `ADMIN_TOKEN`: required for admin web login
 - `DEBUG`: optional (`"1"`/`"true"` enables debug error logs)
+- `PBKDF2_ITERATIONS`: optional PBKDF2 iteration count override, default `20000`

@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { getCookie } from "hono/cookie";
 import { findUserByUsername } from "../db";
 import { sha256, verifyPassword } from "../crypto";
+import { parsePbkdf2Iterations } from "./common";
 import type { Env } from "../types";
 
 type AppContext = Context<{ Bindings: Env }>;
@@ -37,7 +38,8 @@ export async function authKoreader(c: AppContext): Promise<{ userId: number; use
   const user = await findUserByUsername(c.env, username);
   if (!user) return null;
 
-  const ok = await verifyPassword(password, user.username, c.env.PASSWORD_PEPPER, user.password_hash);
+  const iterations = parsePbkdf2Iterations(c.env);
+  const ok = await verifyPassword(password, user.username, c.env.PASSWORD_PEPPER, user.password_hash, iterations);
   if (!ok) return null;
   return { userId: user.id, username: user.username };
 }

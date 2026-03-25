@@ -5,7 +5,7 @@ import { md5 } from "js-md5";
 import { generateSessionToken, sha256, verifyPassword } from "../crypto";
 import { pickLocale } from "../i18n";
 import { authWebUser, USER_SESSION_COOKIE } from "../services/auth";
-import { badRequest, parseSessionTtlHours } from "../services/common";
+import { badRequest, parsePbkdf2Iterations, parseSessionTtlHours } from "../services/common";
 import { renderUserPage } from "../ui/userPage";
 import type { Env, UserLoginRequest } from "../types";
 
@@ -25,7 +25,8 @@ router.post("/web/auth/login", async (c) => {
   if (!user) return c.json({ error: "Invalid credentials" }, 401);
 
   const md5HashedPassword = md5(password);
-  const ok = await verifyPassword(md5HashedPassword, user.username, c.env.PASSWORD_PEPPER, user.password_hash);
+  const iterations = parsePbkdf2Iterations(c.env);
+  const ok = await verifyPassword(md5HashedPassword, user.username, c.env.PASSWORD_PEPPER, user.password_hash, iterations);
   if (!ok) return c.json({ error: "Invalid credentials" }, 401);
 
   const token = generateSessionToken();
