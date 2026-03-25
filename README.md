@@ -22,7 +22,7 @@ A KOReader sync service built with **Cloudflare Worker + D1**, including:
 - `PUT /syncs/progress` upload progress
 - `GET /syncs/progress/:document` fetch progress by document
 
-> KOReader sends `x-auth-key` as `md5(plain_password)`. This service stores/verifies KOReader credentials against that value for protocol compatibility.
+> KOReader sends `x-auth-key` as `md5(plain_password)`. This service stores/verifies KOReader credentials against that value for protocol compatibility. MD5 is weak by itself; here it is only a protocol input and is still wrapped by server-side PBKDF2 hashing before storage.
 
 ### User Web Dashboard Endpoints
 
@@ -117,3 +117,4 @@ npm run deploy
 - `PASSWORD_PEPPER`: required strong secret for password/session hashing
 - `SESSION_TTL_HOURS`: optional session lifetime in hours, default `168`
 - `ADMIN_TOKEN`: required for admin web login
+- `DEBUG`: optional (`"1"`/`"true"` enables debug error logs)
