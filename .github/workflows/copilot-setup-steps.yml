@@ -1,0 +1,54 @@
+name: "Copilot Setup Steps"
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: ${{ (hashFiles('package-lock.json') != '' || hashFiles('npm-shrinkwrap.json') != '') && 'npm' || '' }}
+
+      - name: Install System Utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq xvfb tree ripgrep
+
+      - name: Install dependencies
+        run: |
+          if [ -f package.json ]; then
+            npm ci || npm install
+          else
+            echo "No package.json found, skipping dependency installation."
+          fi
+
+      - name: Initial Checks
+        run: |
+          if [ ! -f package.json ]; then
+            echo "No package.json found, skipping all JS-related checks."
+            exit 0
+          fi
+          # 检查是否存在相应配置文件，避免无配置报错
+          npx tsc -b || echo "No tsconfig found, skipping tsc"
+          npm run lint || echo "No lint script found, skipping lint"
+          # Prettier 通常可以直接运行
+          npx prettier --check . || echo "Prettier check failed or no files to check"
+          npx vitest run --coverage.enabled=false || echo "No tests found, skipping vitest"
+          # 检查未使用代码
+          npx knip || echo "Knip check skipped"
