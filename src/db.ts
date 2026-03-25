@@ -1,6 +1,86 @@
 import type { Env, ProgressRow, UserRow } from "./types";
+import initMigrationSql from "../migrations/0001_init.sql";
 
 const REQUIRED_TABLES = ["users", "progress", "sessions"] as const;
+
+function splitSqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let current = "";
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let i = 0; i < sql.length; i++) {
+    const char = sql[i];
+    const next = sql[i + 1];
+
+    if (inLineComment) {
+      if (char === "\n") inLineComment = false;
+      current += char;
+      continue;
+    }
+
+    if (inBlockComment) {
+      current += char;
+      if (char === "*" && next === "/") {
+        current += next;
+        i++;
+        inBlockComment = false;
+      }
+      continue;
+    }
+
+    if (!inSingleQuote && !inDoubleQuote && char === "-" && next === "-") {
+      current += char + next;
+      i++;
+      inLineComment = true;
+      continue;
+    }
+
+    if (!inSingleQuote && !inDoubleQuote && char === "/" && next === "*") {
+      current += char + next;
+      i++;
+      inBlockComment = true;
+      continue;
+    }
+
+    if (char === "'" && !inDoubleQuote) {
+      if (inSingleQuote && next === "'") {
+        current += char + next;
+        i++;
+        continue;
+      }
+      inSingleQuote = !inSingleQuote;
+      current += char;
+      continue;
+    }
+
+    if (char === '"' && !inSingleQuote) {
+      if (inDoubleQuote && next === '"') {
+        current += char + next;
+        i++;
+        continue;
+      }
+      inDoubleQuote = !inDoubleQuote;
+      current += char;
+      continue;
+    }
+
+    if (char === ";" && !inSingleQuote && !inDoubleQuote) {
+      const statement = current.trim();
+      if (statement) statements.push(statement);
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  const tail = current.trim();
+  if (tail) statements.push(tail);
+  return statements;
+}
 
 export async function getDatabaseInitStatus(
   env: Env
@@ -18,44 +98,11 @@ export async function getDatabaseInitStatus(
 }
 
 export async function initializeDatabase(env: Env): Promise<void> {
-  await env.DB.prepare(
-    `CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      created_at INTEGER NOT NULL DEFAULT (unixepoch())
-    )`
-  ).run();
+  const statements = splitSqlStatements(initMigrationSql);
 
-  await env.DB.prepare(
-    `CREATE TABLE IF NOT EXISTS progress (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      document TEXT NOT NULL,
-      progress TEXT NOT NULL,
-      percentage REAL NOT NULL,
-      device TEXT NOT NULL,
-      device_id TEXT NOT NULL DEFAULT '',
-      timestamp INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-      UNIQUE(user_id, document)
-    )`
-  ).run();
-
-  await env.DB.prepare(
-    `CREATE TABLE IF NOT EXISTS sessions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      token_hash TEXT NOT NULL UNIQUE,
-      expires_at INTEGER NOT NULL,
-      created_at INTEGER NOT NULL DEFAULT (unixepoch())
-    )`
-  ).run();
-
-  await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_progress_user_timestamp ON progress(user_id, timestamp DESC)").run();
-  await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_progress_user_device ON progress(user_id, device)").run();
-  await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)").run();
-  await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)").run();
+  for (const statement of statements) {
+    await env.DB.prepare(statement).run();
+  }
 }
 
 export async function findUserByUsername(
