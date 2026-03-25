@@ -10,6 +10,14 @@ export const USER_SESSION_COOKIE = "ks_session";
 export const ADMIN_SESSION_COOKIE = "ks_admin_session";
 const TIMING_COMPARE_STEPS = 256;
 
+export function isValidField(field: unknown): field is string {
+  return typeof field === "string" && field.length > 0;
+}
+
+export function isValidKeyField(field: unknown): field is string {
+  return isValidField(field) && !field.includes(":");
+}
+
 export function timingSafeEqual(a: string, b: string): boolean {
   let diff = 0;
   for (let i = 0; i < TIMING_COMPARE_STEPS; i++) {
@@ -24,7 +32,7 @@ export function timingSafeEqual(a: string, b: string): boolean {
 export async function authKoreader(c: AppContext): Promise<{ userId: number; username: string } | null> {
   const username = c.req.header("x-auth-user");
   const password = c.req.header("x-auth-key");
-  if (!username || !password) return null;
+  if (!isValidKeyField(username) || !isValidField(password)) return null;
 
   const user = await findUserByUsername(c.env, username);
   if (!user) return null;
