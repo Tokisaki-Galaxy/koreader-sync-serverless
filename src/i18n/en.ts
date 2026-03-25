@@ -62,6 +62,21 @@ const en: LocaleMessages = {
     statLastSync: "Last Sync",
     userPrefix: "User: ",
     deviceDistributionPrefix: "Device Distribution: ",
+
+    readingStatsTitle: "Reading Statistics",
+    statTotalBooks: "Books",
+    statTotalReadTime: "Total Read Time",
+    statTotalReadPages: "Total Read Pages",
+    statLastOpen: "Last Open",
+    statisticsBooksTitle: "Books Statistics",
+    tableMd5: "MD5",
+    tableTitle: "Title",
+    tableAuthors: "Authors",
+    tablePages: "Pages",
+    tableReadTime: "Read Time",
+    tableReadPages: "Read Pages",
+    tableLastOpen: "Last Open",
+    emptyStatisticsBooks: "No synchronized statistics books yet.",
   },
 };
 

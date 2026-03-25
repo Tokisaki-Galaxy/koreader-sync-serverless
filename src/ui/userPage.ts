@@ -15,115 +15,136 @@ export function renderUserPage(locale: Locale): string {
   <title>${m.title}</title>
   <style>
     :root {
-      --bg1: #0f172a;
-      --bg2: #1e293b;
-      --card: rgba(255,255,255,.88);
+      --bg-start: #0f172a;
+      --bg-end: #1e293b;
+      --card: rgba(255,255,255,.9);
       --text: #0f172a;
-      --muted: #64748b;
+      --subtle: #64748b;
       --primary: #2563eb;
-      --ok: #059669;
+      --primary-soft: #dbeafe;
       --danger: #dc2626;
+      --ok: #059669;
       --border: #e2e8f0;
-      --shadow: 0 12px 30px rgba(2, 6, 23, .15);
+      --shadow: 0 20px 36px rgba(2, 6, 23, .16);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
       color: var(--text);
-      background: radial-gradient(1200px 700px at 10% 10%, #334155 0%, transparent 60%),
-                  radial-gradient(1200px 700px at 90% 90%, #1d4ed8 0%, transparent 60%),
-                  linear-gradient(135deg, var(--bg1), var(--bg2));
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(1000px 640px at 8% 10%, #475569 0%, transparent 60%),
+                  radial-gradient(1000px 640px at 85% 92%, #1d4ed8 0%, transparent 60%),
+                  linear-gradient(135deg, var(--bg-start), var(--bg-end));
       min-height: 100vh;
-      padding: 28px 16px;
+      padding: 30px 14px;
     }
-    .wrap { max-width: 1040px; margin: 0 auto; }
+    .container { max-width: 1140px; margin: 0 auto; }
+    .title { margin: 0 0 8px; color: #f8fafc; font-size: 32px; }
+    .subtitle { margin: 0 0 18px; color: #cbd5e1; }
     .card {
       background: var(--card);
-      border: 1px solid rgba(255,255,255,.35);
-      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.4);
+      border-radius: 18px;
+      padding: 16px;
       box-shadow: var(--shadow);
-      padding: 18px;
       margin-bottom: 14px;
-      backdrop-filter: blur(8px);
+      backdrop-filter: blur(10px);
     }
-    .title { color: #e2e8f0; margin: 0 0 10px; font-size: 30px; }
-    .subtitle { color: #cbd5e1; margin: 0 0 18px; }
+    .hidden { display: none; }
     .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    .stats { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 10px; }
-    .stat {
-      background: #fff;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 10px 12px;
-    }
-    .stat .k { color: var(--muted); font-size: 12px; }
-    .stat .v { font-size: 20px; font-weight: 700; margin-top: 2px; }
+    .row-between { justify-content: space-between; }
+    .muted { color: var(--subtle); margin: 0; font-size: 13px; }
+    .ok { color: var(--ok); }
+    .err { color: var(--danger); }
     input, button {
-      font-size: 14px;
       border-radius: 10px;
-      border: 1px solid var(--border);
       padding: 10px 12px;
-      outline: none;
+      font-size: 14px;
+      border: 1px solid var(--border);
     }
     input { background: #fff; min-width: 180px; }
     button {
-      border: 0;
-      background: var(--primary);
-      color: #fff;
       cursor: pointer;
+      border: none;
+      color: #fff;
+      background: var(--primary);
       font-weight: 600;
     }
     button.secondary { background: #475569; }
-    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; }
+    .pill {
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--primary-soft);
+      color: #1d4ed8;
+      border-radius: 999px;
+      padding: 4px 9px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(170px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .grid-4 { grid-template-columns: repeat(4, minmax(170px, 1fr)); }
+    .stat {
+      border: 1px solid var(--border);
+      background: #fff;
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+    .stat .k { color: var(--subtle); font-size: 12px; }
+    .stat .v { margin-top: 2px; font-size: 19px; font-weight: 700; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      border-radius: 12px;
+      overflow: hidden;
+    }
     th, td {
-      text-align: left;
       padding: 10px 12px;
       border-bottom: 1px solid #f1f5f9;
       font-size: 13px;
+      text-align: left;
       vertical-align: top;
     }
-    th { background: #f8fafc; color: #334155; position: sticky; top: 0; }
-    .muted { color: var(--muted); font-size: 13px; margin: 0; }
-    .ok { color: var(--ok); }
-    .err { color: var(--danger); }
-    .hidden { display: none; }
-    .pill {
-      display: inline-block;
-      padding: 3px 8px;
-      border-radius: 999px;
-      background: #dbeafe;
-      color: #1d4ed8;
-      font-size: 12px;
-      font-weight: 600;
+    th {
+      background: #f8fafc;
+      color: #334155;
+      position: sticky;
+      top: 0;
+      z-index: 1;
     }
-    @media (max-width: 900px) {
-      .stats { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+    .table-wrap { overflow: auto; margin-top: 10px; max-height: 520px; }
+    .empty { color: var(--subtle); padding: 14px 0; font-size: 13px; }
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+      .grid-4 { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
     }
     @media (max-width: 640px) {
-      .stats { grid-template-columns: 1fr; }
-      .title { font-size: 24px; }
+      .title { font-size: 26px; }
       input { min-width: 100%; }
+      .grid, .grid-4 { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
-  <div class="wrap">
+  <div class="container">
     <h1 class="title">${m.heading}</h1>
     <p class="subtitle">${m.subtitle}</p>
 
     <section class="card" id="loginCard">
-      <h3 style="margin-top:0;">${m.loginSection}</h3>
+      <h3 style="margin: 0 0 10px;">${m.loginSection}</h3>
       <div class="row">
         <input id="username" placeholder="${m.usernamePlaceholder}" />
         <input id="password" type="password" placeholder="${m.passwordPlaceholder}" />
         <button id="loginBtn">${m.loginButton}</button>
       </div>
-      <p id="loginMsg" class="muted" style="margin-top:8px;"></p>
+      <p id="loginMsg" class="muted" style="margin-top: 8px;"></p>
     </section>
 
     <section class="card hidden" id="dashboardCard">
-      <div class="row" style="justify-content:space-between;">
+      <div class="row row-between">
         <div>
           <h3 style="margin:0;">${m.statsTitle}</h3>
           <p id="userInfo" class="muted"></p>
@@ -134,12 +155,41 @@ export function renderUserPage(locale: Locale): string {
           <button id="logoutBtn" class="secondary">${m.logoutButton}</button>
         </div>
       </div>
-      <div class="stats" id="statsGrid" style="margin-top:10px;"></div>
-      <p class="muted" id="deviceSummary" style="margin-top:10px;"></p>
+      <div class="grid" id="statsGrid"></div>
+      <p class="muted" id="deviceSummary" style="margin-top: 10px;"></p>
+    </section>
+
+    <section class="card hidden" id="readingStatsCard">
+      <div class="row row-between">
+        <h3 style="margin:0;">${m.readingStatsTitle}</h3>
+        <button id="refreshBooksBtn" class="secondary">${m.refreshButton}</button>
+      </div>
+      <div class="grid grid-4" id="readingStatsGrid"></div>
+    </section>
+
+    <section class="card hidden" id="booksCard">
+      <h3 style="margin:0;">${m.statisticsBooksTitle}</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>${m.tableTitle}</th>
+              <th>${m.tableAuthors}</th>
+              <th>${m.tableMd5}</th>
+              <th>${m.tablePages}</th>
+              <th>${m.tableReadTime}</th>
+              <th>${m.tableReadPages}</th>
+              <th>${m.tableLastOpen}</th>
+            </tr>
+          </thead>
+          <tbody id="booksBody"></tbody>
+        </table>
+      </div>
+      <div id="booksEmpty" class="empty hidden">${m.emptyStatisticsBooks}</div>
     </section>
 
     <section class="card hidden" id="recordsCard">
-      <div class="row" style="justify-content:space-between;">
+      <div class="row row-between">
         <h3 style="margin:0;">${m.recordsTitle}</h3>
         <div class="row">
           <input id="page" type="number" value="1" min="1" style="width:88px; min-width:88px;" />
@@ -147,10 +197,16 @@ export function renderUserPage(locale: Locale): string {
           <button id="loadBtn">${m.loadButton}</button>
         </div>
       </div>
-      <div style="overflow:auto; margin-top:10px; max-height:520px;">
+      <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>${m.tableDocument}</th><th>${m.tableProgress}</th><th>${m.tableDevice}</th><th>${m.tableDeviceId}</th><th>${m.tableUpdatedAt}</th></tr>
+            <tr>
+              <th>${m.tableDocument}</th>
+              <th>${m.tableProgress}</th>
+              <th>${m.tableDevice}</th>
+              <th>${m.tableDeviceId}</th>
+              <th>${m.tableUpdatedAt}</th>
+            </tr>
           </thead>
           <tbody id="recordsBody"></tbody>
         </table>
@@ -164,16 +220,44 @@ export function renderUserPage(locale: Locale): string {
     const loginCard = document.getElementById('loginCard');
     const dashboardCard = document.getElementById('dashboardCard');
     const recordsCard = document.getElementById('recordsCard');
+    const readingStatsCard = document.getElementById('readingStatsCard');
+    const booksCard = document.getElementById('booksCard');
     const loginMsg = document.getElementById('loginMsg');
 
     function escapeHtml(value) {
-      return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function formatPercent(value) {
+      return (Number(value || 0) * 100).toFixed(2) + '%';
+    }
+
+    function formatDate(epochSec) {
+      const sec = Number(epochSec || 0);
+      if (!sec) return '-';
+      return new Date(sec * MS_PER_SECOND).toLocaleString();
+    }
+
+    function formatDuration(totalSeconds) {
+      const sec = Math.max(0, Number(totalSeconds || 0));
+      const hour = Math.floor(sec / 3600);
+      const minute = Math.floor((sec % 3600) / 60);
+      if (hour > 0) return hour + 'h ' + minute + 'm';
+      return minute + 'm';
     }
 
     async function jsonFetch(url, options = {}) {
-      const res = await fetch(url, { ...options, headers: { 'content-type': 'application/json', ...(options.headers || {}) } });
+      const res = await fetch(url, {
+        ...options,
+        headers: { 'content-type': 'application/json', ...(options.headers || {}) },
+      });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || I18N.requestFailed);
+      if (!res.ok) throw new Error(data.error || data.message || I18N.requestFailed);
       return data;
     }
 
@@ -184,37 +268,85 @@ export function renderUserPage(locale: Locale): string {
 
     function renderStats(summary) {
       const items = [
-          [I18N.statTotalRecords, Number(summary.totalRecords || 0)],
-          [I18N.statTotalDocuments, Number(summary.totalDocuments || 0)],
-          [I18N.statTotalDevices, Number(summary.totalDevices || 0)],
-          [I18N.statActiveDays, Number(summary.activeDays || 0)],
-          [I18N.statAverageProgress, (Number(summary.averagePercentage || 0) * 100).toFixed(2) + '%'],
-          [I18N.statLastSync, summary.lastSyncAt ? new Date(summary.lastSyncAt * MS_PER_SECOND).toLocaleString() : '-'],
+        [I18N.statTotalRecords, Number(summary.totalRecords || 0)],
+        [I18N.statTotalDocuments, Number(summary.totalDocuments || 0)],
+        [I18N.statTotalDevices, Number(summary.totalDevices || 0)],
+        [I18N.statActiveDays, Number(summary.activeDays || 0)],
+        [I18N.statAverageProgress, formatPercent(summary.averagePercentage)],
+        [I18N.statLastSync, formatDate(summary.lastSyncAt)],
       ];
-      const html = items.map(([k, v]) => '<div class="stat"><div class="k">' + escapeHtml(k) + '</div><div class="v">' + escapeHtml(v) + '</div></div>').join('');
-      document.getElementById('statsGrid').innerHTML = html;
+      document.getElementById('statsGrid').innerHTML = items
+        .map(([k, v]) => '<div class="stat"><div class="k">' + escapeHtml(k) + '</div><div class="v">' + escapeHtml(v) + '</div></div>')
+        .join('');
+    }
+
+    function renderReadingStats(readingStatistics) {
+      const items = [
+        [I18N.statTotalBooks, Number(readingStatistics.totalBooks || 0)],
+        [I18N.statTotalReadTime, formatDuration(readingStatistics.totalReadTime)],
+        [I18N.statTotalReadPages, Number(readingStatistics.totalReadPages || 0)],
+        [I18N.statLastOpen, formatDate(readingStatistics.lastOpenAt)],
+      ];
+      document.getElementById('readingStatsGrid').innerHTML = items
+        .map(([k, v]) => '<div class="stat"><div class="k">' + escapeHtml(k) + '</div><div class="v">' + escapeHtml(v) + '</div></div>')
+        .join('');
+    }
+
+    function renderBooks(items) {
+      const body = document.getElementById('booksBody');
+      const empty = document.getElementById('booksEmpty');
+      body.innerHTML = '';
+      if (!Array.isArray(items) || items.length === 0) {
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+      for (const item of items) {
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>' + escapeHtml(item.title) + '</td>' +
+          '<td>' + escapeHtml(item.authors) + '</td>' +
+          '<td>' + escapeHtml(item.md5) + '</td>' +
+          '<td>' + escapeHtml(Number(item.pages || 0)) + '</td>' +
+          '<td>' + escapeHtml(formatDuration(item.total_read_time)) + '</td>' +
+          '<td>' + escapeHtml(Number(item.total_read_pages || 0)) + '</td>' +
+          '<td>' + escapeHtml(formatDate(item.last_open)) + '</td>';
+        body.appendChild(tr);
+      }
     }
 
     async function loadMe() {
       try {
         const me = await jsonFetch('/web/me');
-        document.getElementById('userInfo').textContent = I18N.userPrefix + me.username + '（ID: ' + me.id + '）';
+        document.getElementById('userInfo').textContent = I18N.userPrefix + me.username + ' (ID: ' + me.id + ')';
         loginCard.classList.add('hidden');
         dashboardCard.classList.remove('hidden');
         recordsCard.classList.remove('hidden');
-        await Promise.all([loadStats(), loadRecords()]);
+        readingStatsCard.classList.remove('hidden');
+        booksCard.classList.remove('hidden');
+        await Promise.all([loadStats(), loadRecords(), loadBooks()]);
       } catch {
         loginCard.classList.remove('hidden');
         dashboardCard.classList.add('hidden');
         recordsCard.classList.add('hidden');
+        readingStatsCard.classList.add('hidden');
+        booksCard.classList.add('hidden');
       }
     }
 
     async function loadStats() {
       const data = await jsonFetch('/web/stats');
       renderStats(data.summary || {});
-      const devices = (data.devices || []).map(d => String(d.device) + ': ' + Number(d.count)).join(' / ') || '-';
+      renderReadingStats(data.readingStatistics || {});
+      const devices = (data.devices || [])
+        .map((d) => String(d.device) + ': ' + Number(d.count))
+        .join(' / ') || '-';
       document.getElementById('deviceSummary').textContent = I18N.deviceDistributionPrefix + devices;
+    }
+
+    async function loadBooks() {
+      const data = await jsonFetch('/web/statistics/books');
+      renderBooks(data.items || []);
     }
 
     async function loadRecords() {
@@ -223,15 +355,14 @@ export function renderUserPage(locale: Locale): string {
       const data = await jsonFetch('/web/records?page=' + page + '&pageSize=' + pageSize);
       const tbody = document.getElementById('recordsBody');
       tbody.innerHTML = '';
-
       for (const item of data.items || []) {
         const tr = document.createElement('tr');
         tr.innerHTML =
           '<td>' + escapeHtml(item.document) + '</td>' +
-          '<td>' + (Number(item.percentage || 0) * 100).toFixed(2) + '%</td>' +
+          '<td>' + formatPercent(item.percentage) + '</td>' +
           '<td>' + escapeHtml(item.device) + '</td>' +
           '<td>' + escapeHtml(item.device_id) + '</td>' +
-          '<td>' + new Date(Number(item.timestamp || 0) * MS_PER_SECOND).toLocaleString() + '</td>';
+          '<td>' + escapeHtml(formatDate(item.timestamp)) + '</td>';
         tbody.appendChild(tr);
       }
     }
@@ -259,6 +390,12 @@ export function renderUserPage(locale: Locale): string {
 
     document.getElementById('refreshStatsBtn').addEventListener('click', async () => {
       try { await loadStats(); } catch {}
+    });
+
+    document.getElementById('refreshBooksBtn').addEventListener('click', async () => {
+      try {
+        await Promise.all([loadStats(), loadBooks()]);
+      } catch {}
     });
 
     loadMe();

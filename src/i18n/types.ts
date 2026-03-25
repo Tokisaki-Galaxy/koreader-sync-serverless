@@ -60,6 +60,20 @@ export interface UserMessages {
   statLastSync: string;
   userPrefix: string;
   deviceDistributionPrefix: string;
+  readingStatsTitle: string;
+  statTotalBooks: string;
+  statTotalReadTime: string;
+  statTotalReadPages: string;
+  statLastOpen: string;
+  statisticsBooksTitle: string;
+  tableMd5: string;
+  tableTitle: string;
+  tableAuthors: string;
+  tablePages: string;
+  tableReadTime: string;
+  tableReadPages: string;
+  tableLastOpen: string;
+  emptyStatisticsBooks: string;
 }
 
 export interface LocaleMessages {

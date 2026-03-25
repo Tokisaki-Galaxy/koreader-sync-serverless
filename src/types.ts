@@ -40,3 +40,29 @@ export interface ProgressUpdateRequest {
   device: string;
   device_id?: string;
 }
+
+export interface StatisticsPageStatRow {
+  page: number | null;
+  start_time: number;
+  duration: number;
+  total_pages: number;
+}
+
+export interface StatisticsBookRow {
+  md5: string;
+  title: string;
+  authors: string;
+  notes: number;
+  last_open: number;
+  highlights: number;
+  pages: number;
+  series: string;
+  language: string;
+  total_read_time: number;
+  total_read_pages: number;
+  page_stat_data: StatisticsPageStatRow[];
+}
+
+export interface StatisticsSnapshot {
+  books: StatisticsBookRow[];
+}

@@ -62,6 +62,21 @@ const ja: LocaleMessages = {
     statLastSync: "最終同期",
     userPrefix: "ユーザー：",
     deviceDistributionPrefix: "デバイス分布：",
+
+    readingStatsTitle: "読書統計",
+    statTotalBooks: "書籍数",
+    statTotalReadTime: "総読書時間",
+    statTotalReadPages: "総読書ページ",
+    statLastOpen: "最終オープン",
+    statisticsBooksTitle: "書籍統計",
+    tableMd5: "MD5",
+    tableTitle: "タイトル",
+    tableAuthors: "著者",
+    tablePages: "総ページ",
+    tableReadTime: "読書時間",
+    tableReadPages: "読書ページ",
+    tableLastOpen: "最終オープン",
+    emptyStatisticsBooks: "同期済みの読書統計書籍はまだありません。",
   },
 };
 
