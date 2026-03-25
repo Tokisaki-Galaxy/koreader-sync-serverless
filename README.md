@@ -22,6 +22,8 @@ A KOReader sync service built with **Cloudflare Worker + D1**, including:
 - `PUT /syncs/progress` upload progress
 - `GET /syncs/progress/:document` fetch progress by document
 
+> KOReader sends `x-auth-key` as `md5(plain_password)`. This service stores/verifies KOReader credentials against that value for protocol compatibility.
+
 ### User Web Dashboard Endpoints
 
 - `POST /web/auth/login` login (sets HttpOnly cookie)

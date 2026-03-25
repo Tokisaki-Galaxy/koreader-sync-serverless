@@ -10,7 +10,8 @@
     "check": "npm run typecheck"
   },
   "dependencies": {
-    "hono": "^4.9.11"
+    "hono": "^4.9.11",
+    "js-md5": "^0.8.3"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260301.0",

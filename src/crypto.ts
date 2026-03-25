@@ -1,3 +1,5 @@
+import { md5 } from "js-md5";
+
 const encoder = new TextEncoder();
 const PBKDF2_ITERATIONS = 20000;
 
@@ -43,6 +45,10 @@ export async function verifyPassword(
 ): Promise<boolean> {
   const digest = await hashPassword(password, username, pepper);
   return digest === storedHash;
+}
+
+export function md5Hex(input: string): string {
+  return md5(input);
 }
 
 export function generateSessionToken(): string {

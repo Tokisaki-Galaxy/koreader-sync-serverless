@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { deleteCookie, setCookie, getCookie } from "hono/cookie";
 import { findUserByUsername } from "../db";
-import { generateSessionToken, sha256, verifyPassword } from "../crypto";
+import { generateSessionToken, hashPassword, md5Hex, sha256, verifyPassword } from "../crypto";
 import { pickLocale } from "../i18n";
 import { authWebUser, USER_SESSION_COOKIE } from "../services/auth";
 import { badRequest, parseSessionTtlHours } from "../services/common";
@@ -23,8 +23,17 @@ router.post("/web/auth/login", async (c) => {
   const user = await findUserByUsername(c.env, username);
   if (!user) return c.json({ error: "Invalid credentials" }, 401);
 
-  const ok = await verifyPassword(password, user.username, c.env.PASSWORD_PEPPER, user.password_hash);
-  if (!ok) return c.json({ error: "Invalid credentials" }, 401);
+  const md5Password = md5Hex(password);
+  let ok = await verifyPassword(md5Password, user.username, c.env.PASSWORD_PEPPER, user.password_hash);
+  if (!ok) {
+    const legacyOk = await verifyPassword(password, user.username, c.env.PASSWORD_PEPPER, user.password_hash);
+    if (!legacyOk) return c.json({ error: "Invalid credentials" }, 401);
+    const upgradedHash = await hashPassword(md5Password, user.username, c.env.PASSWORD_PEPPER);
+    await c.env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?")
+      .bind(upgradedHash, user.id)
+      .run();
+    ok = true;
+  }
 
   const token = generateSessionToken();
   const tokenHash = await sha256(`${token}:${c.env.PASSWORD_PEPPER}`);
