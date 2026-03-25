@@ -11,6 +11,16 @@ const DOCUMENT_MISSING_MESSAGE = "Field 'document' not provided.";
 const UNAUTHORIZED_MESSAGE = "Unauthorized";
 const REGISTRATION_DISABLED_MESSAGE = "User registration is disabled.";
 
+function logError(c: any, label: string, error: unknown) {
+  const isDebug = c.env.DEBUG === "1" || c.env.DEBUG === "true";
+  if (isDebug) {
+    console.error(`[DEBUG ERROR] ${label}:`, error);
+    if (error instanceof Error && error.cause) {
+      console.error(`[DEBUG CAUSE] ${label}:`, error.cause);
+    }
+  }
+}
+
 function isRegistrationEnabled(env: Env): boolean {
   const flag = env.ENABLE_USER_REGISTRATION;
   if (flag === undefined) return true;
@@ -25,7 +35,8 @@ router.post("/users/create", async (c) => {
   let body: RegisterRequest;
   try {
     body = await c.req.json<RegisterRequest>();
-  } catch {
+  } catch (e) {
+    logError(c, "JSON Parse Error (/users/create)", e);
     return badRequest("Invalid JSON body");
   }
 
@@ -39,25 +50,50 @@ router.post("/users/create", async (c) => {
     const passwordHash = await hashPassword(password, username, c.env.PASSWORD_PEPPER);
     await createUser(c.env, username, passwordHash);
     return c.json({ username }, 201);
-  } catch {
-    return c.json({ message: "Username is already registered." }, 402);
+  } catch (error: any) {
+    logError(c, "User Creation Failed", error);
+    
+    const isDuplicate = 
+      error?.message?.includes("UNIQUE") || 
+      JSON.stringify(error).includes("UNIQUE") ||
+      JSON.stringify(error?.cause).includes("UNIQUE");
+
+    if (isDuplicate) {
+      return c.json({ message: "Username is already registered." }, 402);
+    }
+    
+    const errMsg = (c.env.DEBUG === "1" || c.env.DEBUG === "true")
+      ? `Creation failed: ${error?.message || "Unknown error"}`
+      : "Username is already registered.";
+
+    return c.json({ message: errMsg }, 402);
   }
 });
 
 router.get("/users/auth", async (c) => {
-  const auth = await authKoreader(c);
-  if (!auth) return c.json({ message: UNAUTHORIZED_MESSAGE }, 401);
-  return c.json({ authorized: "OK" });
+  try {
+    const auth = await authKoreader(c);
+    if (!auth) return c.json({ message: UNAUTHORIZED_MESSAGE }, 401);
+    return c.json({ authorized: "OK" });
+  } catch (error) {
+    logError(c, "Auth Error", error);
+    return c.json({ message: "Auth internal error" }, 500);
+  }
 });
 
 router.put("/syncs/progress", async (c) => {
-  const auth = await authKoreader(c);
+  const auth = await authKoreader(c).catch(e => {
+    logError(c, "Auth Check Error in PUT", e);
+    return null;
+  });
+  
   if (!auth) return c.json({ message: UNAUTHORIZED_MESSAGE }, 401);
 
   let body: ProgressUpdateRequest;
   try {
     body = await c.req.json<ProgressUpdateRequest>();
-  } catch {
+  } catch (e) {
+    logError(c, "JSON Parse Error (/syncs/progress)", e);
     return badRequest("Invalid JSON body");
   }
 
@@ -69,42 +105,52 @@ router.put("/syncs/progress", async (c) => {
     return c.json({ message: INVALID_REQUEST_MESSAGE }, 403);
   }
 
-  const timestamp = Math.floor(Date.now() / 1000);
-  await upsertProgress(c.env, auth.userId, {
-    document,
-    progress,
-    percentage,
-    device,
-    device_id: device_id ?? "",
-    timestamp,
-  });
-
-  return c.json({
-    document,
-    timestamp,
-  });
+  try {
+    const timestamp = Math.floor(Date.now() / 1000);
+    await upsertProgress(c.env, auth.userId, {
+      document,
+      progress,
+      percentage,
+      device,
+      device_id: device_id ?? "",
+      timestamp,
+    });
+    return c.json({ document, timestamp });
+  } catch (error) {
+    logError(c, "Upsert Progress Error", error);
+    return c.json({ message: "Failed to save progress" }, 500);
+  }
 });
 
 router.get("/syncs/progress/:document", async (c) => {
-  const auth = await authKoreader(c);
+  const auth = await authKoreader(c).catch(e => {
+    logError(c, "Auth Check Error in GET", e);
+    return null;
+  });
   if (!auth) return c.json({ message: UNAUTHORIZED_MESSAGE }, 401);
 
   const document = c.req.param("document");
   if (!isValidKeyField(document)) {
     return c.json({ message: DOCUMENT_MISSING_MESSAGE }, 403);
   }
-  const row = await getLatestProgressByDocument(c.env, auth.userId, document);
-  // KOReader compatibility: official server always returns 200 and includes the document key.
-  if (!row) return c.json({ document });
 
-  return c.json({
-    document,
-    progress: row.progress,
-    percentage: row.percentage,
-    device: row.device,
-    ...(row.device_id ? { device_id: row.device_id } : {}),
-    timestamp: row.timestamp,
-  });
+  try {
+    const row = await getLatestProgressByDocument(c.env, auth.userId, document);
+    // KOReader compatibility: official server always returns 200 and includes the document key.
+    if (!row) return c.json({ document });
+
+    return c.json({
+      document,
+      progress: row.progress,
+      percentage: row.percentage,
+      device: row.device,
+      ...(row.device_id ? { device_id: row.device_id } : {}),
+      timestamp: row.timestamp,
+    });
+  } catch (error) {
+    logError(c, "Get Progress Error", error);
+    return c.json({ message: "Failed to fetch progress" }, 500);
+  }
 });
 
 export default router;
