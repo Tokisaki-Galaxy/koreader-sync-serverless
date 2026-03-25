@@ -1,0 +1,27 @@
+name = "koreader-sync"
+main = "src/index.ts"
+compatibility_date = "2026-03-25"
+
+[vars]
+SESSION_TTL_HOURS = "168"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "storage-db"
+database_id = "d31acddc-2d87-4743-9531-5396673d8c9a"
+migrations_dir = "migrations"
+
+[observability]
+enabled = false
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1
