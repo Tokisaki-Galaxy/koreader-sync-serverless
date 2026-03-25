@@ -94,7 +94,7 @@ function normalizeBook(value: unknown): StatisticsBookRow | null {
 function dedupePageStats(rows: StatisticsPageStatRow[]): StatisticsPageStatRow[] {
   const map = new Map<string, StatisticsPageStatRow>();
   for (const row of rows) {
-    const key = `${row.page ?? "null"}:${row.start_time}:${row.duration}:${row.total_pages}`;
+    const key = JSON.stringify([row.page, row.start_time, row.duration, row.total_pages]);
     map.set(key, row);
   }
   return Array.from(map.values());
