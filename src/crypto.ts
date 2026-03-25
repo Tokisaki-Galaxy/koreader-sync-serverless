@@ -1,5 +1,5 @@
 const encoder = new TextEncoder();
-const DEFAULT_PBKDF2_ITERATIONS = 20000;
+export const DEFAULT_PBKDF2_ITERATIONS = 20000;
 
 async function pbkdf2(password: string, salt: string, iterations: number = DEFAULT_PBKDF2_ITERATIONS): Promise<string> {
   const keyMaterial = await crypto.subtle.importKey(
@@ -14,7 +14,7 @@ async function pbkdf2(password: string, salt: string, iterations: number = DEFAU
     {
       name: "PBKDF2",
       salt: encoder.encode(salt),
-      // OWASP recommends high PBKDF2 iteration counts for SHA-256; default to 20k unless overridden via config.
+      // OWASP recommends higher PBKDF2 iteration counts for SHA-256; default to 20k for perf/compatibility unless overridden.
       iterations,
       hash: "SHA-256",
     },

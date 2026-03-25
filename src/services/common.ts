@@ -1,3 +1,4 @@
+import { DEFAULT_PBKDF2_ITERATIONS } from "../crypto";
 import type { Env } from "../types";
 
 export function badRequest(message: string) {
@@ -13,8 +14,10 @@ export function parseSessionTtlHours(env: Env): number {
 }
 
 export function parsePbkdf2Iterations(env: Env): number {
-  const value = Number(env.PBKDF2_ITERATIONS ?? "20000");
-  if (!Number.isFinite(value) || value <= 0 || !Number.isInteger(value)) return 20000;
+  const value = Number(env.PBKDF2_ITERATIONS ?? DEFAULT_PBKDF2_ITERATIONS);
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < DEFAULT_PBKDF2_ITERATIONS) {
+    return DEFAULT_PBKDF2_ITERATIONS;
+  }
   return value;
 }
 
