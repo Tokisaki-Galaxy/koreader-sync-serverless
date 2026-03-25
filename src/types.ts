@@ -3,6 +3,7 @@ export interface Env {
   PASSWORD_PEPPER: string;
   SESSION_TTL_HOURS?: string;
   ADMIN_TOKEN?: string;
+  ENABLE_USER_REGISTRATION?: string;
 }
 
 export interface UserRow {

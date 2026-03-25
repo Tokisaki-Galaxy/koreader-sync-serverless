@@ -9,8 +9,19 @@ const router = new Hono<{ Bindings: Env }>();
 const INVALID_REQUEST_MESSAGE = "Invalid request";
 const DOCUMENT_MISSING_MESSAGE = "Field 'document' not provided.";
 const UNAUTHORIZED_MESSAGE = "Unauthorized";
+const REGISTRATION_DISABLED_MESSAGE = "User registration is disabled.";
+
+function isRegistrationEnabled(env: Env): boolean {
+  const flag = env.ENABLE_USER_REGISTRATION;
+  if (flag === undefined) return true;
+  return flag === "true" || flag === "1";
+}
 
 router.post("/users/create", async (c) => {
+  if (!isRegistrationEnabled(c.env)) {
+    return c.json({ message: REGISTRATION_DISABLED_MESSAGE }, 402);
+  }
+
   let body: RegisterRequest;
   try {
     body = await c.req.json<RegisterRequest>();
@@ -83,8 +94,8 @@ router.get("/syncs/progress/:document", async (c) => {
     return c.json({ message: DOCUMENT_MISSING_MESSAGE }, 403);
   }
   const row = await getLatestProgressByDocument(c.env, auth.userId, document);
-  // KOReader compatibility: official server returns 200 with empty object when no progress exists.
-  if (!row) return c.json({});
+  // KOReader compatibility: official server always returns 200 and includes the document key.
+  if (!row) return c.json({ document });
 
   return c.json({
     document,
