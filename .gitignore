@@ -4,3 +4,5 @@ node_modules/
 *.db
 server.js
 .DS_Store
+*.AppImage
+squashfs-root/
