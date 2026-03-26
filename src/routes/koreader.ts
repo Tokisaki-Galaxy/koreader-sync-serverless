@@ -108,6 +108,32 @@ function dedupePageStats(rows: StatisticsPageStatRow[]): StatisticsPageStatRow[]
   return Array.from(map.values());
 }
 
+function mergeUnknownFields(
+  existing: Record<string, unknown>,
+  incoming: Record<string, unknown>
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...existing };
+  for (const [key, incomingValue] of Object.entries(incoming)) {
+    const existingValue = merged[key];
+    if (incomingValue === undefined || incomingValue === null) continue;
+    if (typeof incomingValue === "string") {
+      if (incomingValue.trim() === "") continue;
+      merged[key] = incomingValue;
+      continue;
+    }
+    if (
+      Array.isArray(incomingValue) &&
+      incomingValue.length === 0 &&
+      Array.isArray(existingValue) &&
+      existingValue.length > 0
+    ) {
+      continue;
+    }
+    merged[key] = incomingValue;
+  }
+  return merged;
+}
+
 function mergeBooks(existing: StatisticsBookRow, incoming: StatisticsBookRow): StatisticsBookRow {
   const {
     page_stat_data: existingPageStats,
@@ -139,10 +165,10 @@ function mergeBooks(existing: StatisticsBookRow, incoming: StatisticsBookRow): S
     total_read_pages: incomingTotalReadPages,
     ...incomingRest
   } = incoming;
+  const unknownFields = mergeUnknownFields(existingRest, incomingRest);
   return {
-    ...existingRest,
-    ...incomingRest,
-    md5: incomingMd5 || existingMd5,
+    ...unknownFields,
+    md5: existingMd5,
     title: incomingTitle || existingTitle,
     authors: incomingAuthors || existingAuthors,
     notes: Math.max(existingNotes, incomingNotes),
