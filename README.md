@@ -64,6 +64,7 @@ npm run deploy
 - `GET /users/auth` authenticate (`x-auth-user` + `x-auth-key`)
 - `PUT /syncs/progress` upload progress
 - `GET /syncs/progress/:document` fetch progress by document
+- `PUT /syncs/statistics` synchronize reading statistics snapshot
 
 > KOReader sends `x-auth-key` as `md5(plain_password)`. This service stores/verifies KOReader credentials against that value for protocol compatibility. MD5 is weak by itself; here it is only a protocol input and is still wrapped by server-side PBKDF2 hashing before storage.
 
@@ -74,7 +75,59 @@ npm run deploy
 - `GET /web/me` current user
 - `GET /web/records?page=1&pageSize=20` reading records
 - `GET /web/stats` statistics summary
+- `GET /web/statistics/books` synchronized books statistics list
 - `GET /` user dashboard page
+
+### Reading Statistics Sync Contract
+
+`PUT /syncs/statistics` request body:
+
+```json
+{
+  "schema_version": 20221111,
+  "device": "KOReader Device Model",
+  "device_id": "device-id-or-empty-string",
+  "snapshot": {
+    "books": [
+      {
+        "md5": "partial-md5",
+        "title": "Book title",
+        "authors": "Author",
+        "notes": 0,
+        "last_open": 1710000000,
+        "highlights": 0,
+        "pages": 320,
+        "series": "Series #1",
+        "language": "en",
+        "total_read_time": 1234,
+        "total_read_pages": 88,
+        "page_stat_data": [
+          {
+            "page": 12,
+            "start_time": 1710000100,
+            "duration": 24,
+            "total_pages": 320
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Notes:
+- Auth is identical to other KOReader sync endpoints (`x-auth-user`, `x-auth-key`).
+- Server uses `md5` as cross-device identity key for merge.
+- Response format:
+
+```json
+{
+  "ok": true,
+  "snapshot": {
+    "books": []
+  }
+}
+```
 
 ### Admin Web Endpoints (Token Auth)
 

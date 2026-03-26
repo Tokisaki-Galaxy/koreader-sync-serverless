@@ -1,15 +1,53 @@
 import { Hono } from "hono";
 import { deleteCookie, setCookie, getCookie } from "hono/cookie";
-import { findUserByUsername } from "../db";
+import { findUserByUsername, getStatisticsSnapshot } from "../db";
 import { md5 } from "js-md5";
 import { generateSessionToken, sha256, verifyPassword } from "../crypto";
 import { pickLocale } from "../i18n";
 import { authWebUser, USER_SESSION_COOKIE } from "../services/auth";
 import { badRequest, parsePbkdf2Iterations, parseSessionTtlHours } from "../services/common";
 import { renderUserPage } from "../ui/userPage";
-import type { Env, UserLoginRequest } from "../types";
+import type { Env, StatisticsBookRow, StatisticsSnapshot, UserLoginRequest } from "../types";
 
 const router = new Hono<{ Bindings: Env }>();
+
+function numberOrZero(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function parseStatisticsSnapshot(snapshotJson: string): StatisticsSnapshot | null {
+  try {
+    const parsed = JSON.parse(snapshotJson) as unknown;
+    if (!parsed || typeof parsed !== "object") return null;
+    const booksRaw = (parsed as Record<string, unknown>).books;
+    if (!Array.isArray(booksRaw)) return { books: [] };
+    const books: StatisticsBookRow[] = [];
+    for (const item of booksRaw) {
+      if (!item || typeof item !== "object") continue;
+      const row = item as Record<string, unknown>;
+      const md5Value = typeof row.md5 === "string" ? row.md5.trim() : "";
+      if (!md5Value) continue;
+      books.push({
+        md5: md5Value,
+        title: typeof row.title === "string" ? row.title : "",
+        authors: typeof row.authors === "string" ? row.authors : "",
+        notes: numberOrZero(row.notes),
+        last_open: numberOrZero(row.last_open),
+        highlights: numberOrZero(row.highlights),
+        pages: numberOrZero(row.pages),
+        series: typeof row.series === "string" ? row.series : "",
+        language: typeof row.language === "string" ? row.language : "",
+        total_read_time: numberOrZero(row.total_read_time),
+        total_read_pages: numberOrZero(row.total_read_pages),
+        page_stat_data: [],
+      });
+    }
+    return { books };
+  } catch {
+    return null;
+  }
+}
 
 router.post("/web/auth/login", async (c) => {
   let body: UserLoginRequest;
@@ -121,6 +159,13 @@ router.get("/web/stats", async (c) => {
     .bind(auth.userId)
     .all();
 
+  const statistics = await getStatisticsSnapshot(c.env, auth.userId);
+  const snapshot = statistics ? parseStatisticsSnapshot(statistics.snapshot_json) : null;
+  const books = snapshot?.books ?? [];
+  const totalReadTime = books.reduce((sum, item) => sum + Number(item.total_read_time || 0), 0);
+  const totalReadPages = books.reduce((sum, item) => sum + Number(item.total_read_pages || 0), 0);
+  const statisticsLastOpen = books.reduce((max, item) => Math.max(max, Number(item.last_open || 0)), 0);
+
   return c.json({
     summary: {
       totalRecords: summary?.total_records ?? 0,
@@ -130,7 +175,31 @@ router.get("/web/stats", async (c) => {
       averagePercentage: summary?.avg_percentage ?? 0,
       lastSyncAt: summary?.last_sync_at ?? null,
     },
+    readingStatistics: {
+      totalBooks: books.length,
+      totalReadTime,
+      totalReadPages,
+      lastOpenAt: statisticsLastOpen || null,
+    },
     devices: devices ?? [],
+  });
+});
+
+router.get("/web/statistics/books", async (c) => {
+  const auth = await authWebUser(c);
+  if (!auth) return c.json({ error: "Unauthorized" }, 401);
+
+  const statistics = await getStatisticsSnapshot(c.env, auth.userId);
+  if (!statistics) return c.json({ schemaVersion: null, items: [] });
+  const snapshot = parseStatisticsSnapshot(statistics.snapshot_json);
+  const books = (snapshot?.books ?? []).sort(
+    (a, b) => Number(b.total_read_time || 0) - Number(a.total_read_time || 0)
+  );
+  return c.json({
+    schemaVersion: statistics.schema_version,
+    device: statistics.device,
+    deviceId: statistics.device_id,
+    items: books,
   });
 });
 

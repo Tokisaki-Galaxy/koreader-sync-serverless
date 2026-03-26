@@ -1,7 +1,8 @@
 import type { Env, ProgressRow, UserRow } from "./types";
 import initMigrationSql from "../migrations/0001_init.sql";
+import statisticsMigrationSql from "../migrations/0002_statistics_sync.sql";
 
-const REQUIRED_TABLES = ["users", "progress", "sessions"] as const;
+const REQUIRED_TABLES = ["users", "progress", "sessions", "statistics_snapshot"] as const;
 
 function splitSqlStatements(sql: string): string[] {
   const statements: string[] = [];
@@ -98,7 +99,10 @@ export async function getDatabaseInitStatus(
 }
 
 export async function initializeDatabase(env: Env): Promise<void> {
-  const statements = splitSqlStatements(initMigrationSql);
+  const statements = [
+    ...splitSqlStatements(initMigrationSql),
+    ...splitSqlStatements(statisticsMigrationSql),
+  ];
 
   for (const statement of statements) {
     await env.DB.prepare(statement).run();
@@ -193,4 +197,41 @@ export async function getLatestProgressByDocument(
     .first<ProgressRow>();
 
   return row ?? null;
+}
+
+export async function getStatisticsSnapshot(
+  env: Env,
+  userId: number
+): Promise<{ schema_version: number; device: string; device_id: string; snapshot_json: string } | null> {
+  const row = await env.DB.prepare(
+    `SELECT schema_version, device, device_id, snapshot_json
+     FROM statistics_snapshot
+     WHERE user_id = ?`
+  )
+    .bind(userId)
+    .first<{ schema_version: number; device: string; device_id: string; snapshot_json: string }>();
+  return row ?? null;
+}
+
+export async function upsertStatisticsSnapshot(
+  env: Env,
+  userId: number,
+  schemaVersion: number,
+  device: string,
+  deviceId: string,
+  snapshotJson: string
+): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO statistics_snapshot (
+      user_id, schema_version, device, device_id, snapshot_json, updated_at
+    ) VALUES (?, ?, ?, ?, ?, unixepoch())
+    ON CONFLICT(user_id) DO UPDATE SET
+      schema_version = excluded.schema_version,
+      device = excluded.device,
+      device_id = excluded.device_id,
+      snapshot_json = excluded.snapshot_json,
+      updated_at = unixepoch()`
+  )
+    .bind(userId, schemaVersion, device, deviceId, snapshotJson)
+    .run();
 }
