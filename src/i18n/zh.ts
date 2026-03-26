@@ -62,6 +62,21 @@ const zh: LocaleMessages = {
     statLastSync: "最后同步",
     userPrefix: "用户：",
     deviceDistributionPrefix: "设备分布：",
+
+    readingStatsTitle: "阅读统计",
+    statTotalBooks: "书籍数",
+    statTotalReadTime: "总阅读时长",
+    statTotalReadPages: "总阅读页数",
+    statLastOpen: "最后打开",
+    statisticsBooksTitle: "书籍统计",
+    tableMd5: "MD5",
+    tableTitle: "标题",
+    tableAuthors: "作者",
+    tablePages: "总页数",
+    tableReadTime: "阅读时长",
+    tableReadPages: "阅读页数",
+    tableLastOpen: "最后打开",
+    emptyStatisticsBooks: "暂无同步的阅读统计书籍。",
   },
 };
 
