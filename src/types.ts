@@ -46,6 +46,7 @@ export interface StatisticsPageStatRow {
   start_time: number;
   duration: number;
   total_pages: number;
+  [key: string]: unknown;
 }
 
 export interface StatisticsBookRow {
@@ -61,6 +62,7 @@ export interface StatisticsBookRow {
   total_read_time: number;
   total_read_pages: number;
   page_stat_data: StatisticsPageStatRow[];
+  [key: string]: unknown;
 }
 
 export interface StatisticsSnapshot {

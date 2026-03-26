@@ -48,18 +48,24 @@ function normalizePageStatData(value: unknown): StatisticsPageStatRow[] {
   for (const item of value) {
     if (!item || typeof item !== "object") continue;
     const record = item as Record<string, unknown>;
-    const page = record.page == null ? null : Number(record.page);
-    const start_time = Number(record.start_time);
-    const duration = Number(record.duration);
-    const total_pages = Number(record.total_pages);
-    if (!Number.isFinite(start_time) || !Number.isFinite(duration) || !Number.isFinite(total_pages)) {
+    const { page, start_time, duration, total_pages, ...rest } = record;
+    const normalizedPage = page == null ? null : Number(page);
+    const normalizedStartTime = Number(start_time);
+    const normalizedDuration = Number(duration);
+    const normalizedTotalPages = Number(total_pages);
+    if (
+      !Number.isFinite(normalizedStartTime) ||
+      !Number.isFinite(normalizedDuration) ||
+      !Number.isFinite(normalizedTotalPages)
+    ) {
       continue;
     }
     rows.push({
-      page: page == null || !Number.isFinite(page) ? null : page,
-      start_time,
-      duration,
-      total_pages,
+      ...rest,
+      page: normalizedPage == null || !Number.isFinite(normalizedPage) ? null : normalizedPage,
+      start_time: normalizedStartTime,
+      duration: normalizedDuration,
+      total_pages: normalizedTotalPages,
     });
   }
   return rows;
@@ -73,9 +79,11 @@ function numberOrZero(value: unknown): number {
 function normalizeBook(value: unknown): StatisticsBookRow | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Record<string, unknown>;
-  const md5Value = typeof row.md5 === "string" ? row.md5.trim() : "";
+  const { md5, page_stat_data, ...rest } = row;
+  const md5Value = typeof md5 === "string" ? md5.trim() : "";
   if (!md5Value) return null;
   return {
+    ...rest,
     md5: md5Value,
     title: typeof row.title === "string" ? row.title : "",
     authors: typeof row.authors === "string" ? row.authors : "",
@@ -87,7 +95,7 @@ function normalizeBook(value: unknown): StatisticsBookRow | null {
     language: typeof row.language === "string" ? row.language : "",
     total_read_time: numberOrZero(row.total_read_time),
     total_read_pages: numberOrZero(row.total_read_pages),
-    page_stat_data: normalizePageStatData(row.page_stat_data),
+    page_stat_data: normalizePageStatData(page_stat_data),
   };
 }
 
@@ -101,19 +109,51 @@ function dedupePageStats(rows: StatisticsPageStatRow[]): StatisticsPageStatRow[]
 }
 
 function mergeBooks(existing: StatisticsBookRow, incoming: StatisticsBookRow): StatisticsBookRow {
+  const {
+    page_stat_data: existingPageStats,
+    md5: existingMd5,
+    title: existingTitle,
+    authors: existingAuthors,
+    notes: existingNotes,
+    last_open: existingLastOpen,
+    highlights: existingHighlights,
+    pages: existingPages,
+    series: existingSeries,
+    language: existingLanguage,
+    total_read_time: existingTotalReadTime,
+    total_read_pages: existingTotalReadPages,
+    ...existingRest
+  } = existing;
+  const {
+    page_stat_data: incomingPageStats,
+    md5: incomingMd5,
+    title: incomingTitle,
+    authors: incomingAuthors,
+    notes: incomingNotes,
+    last_open: incomingLastOpen,
+    highlights: incomingHighlights,
+    pages: incomingPages,
+    series: incomingSeries,
+    language: incomingLanguage,
+    total_read_time: incomingTotalReadTime,
+    total_read_pages: incomingTotalReadPages,
+    ...incomingRest
+  } = incoming;
   return {
-    md5: existing.md5,
-    title: incoming.title || existing.title,
-    authors: incoming.authors || existing.authors,
-    notes: Math.max(existing.notes, incoming.notes),
-    last_open: Math.max(existing.last_open, incoming.last_open),
-    highlights: Math.max(existing.highlights, incoming.highlights),
-    pages: Math.max(existing.pages, incoming.pages),
-    series: incoming.series || existing.series,
-    language: incoming.language || existing.language,
-    total_read_time: Math.max(existing.total_read_time, incoming.total_read_time),
-    total_read_pages: Math.max(existing.total_read_pages, incoming.total_read_pages),
-    page_stat_data: dedupePageStats([...existing.page_stat_data, ...incoming.page_stat_data]),
+    ...existingRest,
+    ...incomingRest,
+    md5: incomingMd5 || existingMd5,
+    title: incomingTitle || existingTitle,
+    authors: incomingAuthors || existingAuthors,
+    notes: Math.max(existingNotes, incomingNotes),
+    last_open: Math.max(existingLastOpen, incomingLastOpen),
+    highlights: Math.max(existingHighlights, incomingHighlights),
+    pages: Math.max(existingPages, incomingPages),
+    series: incomingSeries || existingSeries,
+    language: incomingLanguage || existingLanguage,
+    total_read_time: Math.max(existingTotalReadTime, incomingTotalReadTime),
+    total_read_pages: Math.max(existingTotalReadPages, incomingTotalReadPages),
+    page_stat_data: dedupePageStats([...existingPageStats, ...incomingPageStats]),
   };
 }
 
