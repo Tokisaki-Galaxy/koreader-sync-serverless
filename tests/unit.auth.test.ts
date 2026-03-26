@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import { timingSafeEqual } from "../src/services/auth";
 import { hashPassword } from "../src/crypto";
+import { parsePbkdf2Iterations } from "../src/services/common";
 import { createMockEnv } from "./helpers/mock-db";
 import koreaderRoutes from "../src/routes/koreader";
 
@@ -15,7 +16,12 @@ describe("auth helpers", () => {
   it("authenticates koreader route using x-auth-key md5 payload", async () => {
     const env = createMockEnv();
     const md5Password = "5f4dcc3b5aa765d61d8327deb882cf99";
-    const hashed = await hashPassword(md5Password, "alice", env.PASSWORD_PEPPER, 1000);
+    const hashed = await hashPassword(
+      md5Password,
+      "alice",
+      env.PASSWORD_PEPPER,
+      parsePbkdf2Iterations(env)
+    );
     await env.DB.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)").bind("alice", hashed).run();
 
     const app = new Hono<{ Bindings: typeof env }>();

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import app from "../src/index";
 import { hashPassword, sha256 } from "../src/crypto";
+import { parsePbkdf2Iterations } from "../src/services/common";
 import { createMockEnv } from "./helpers/mock-db";
 import { getCookieHeaderFromResponse } from "./helpers/http";
 
@@ -65,7 +66,12 @@ describe("worker integration", () => {
   it("returns document-only payload when progress does not exist", async () => {
     const env = createMockEnv();
     const md5Password = "5f4dcc3b5aa765d61d8327deb882cf99";
-    const hash = await hashPassword(md5Password, "reader2", env.PASSWORD_PEPPER, 1000);
+    const hash = await hashPassword(
+      md5Password,
+      "reader2",
+      env.PASSWORD_PEPPER,
+      parsePbkdf2Iterations(env)
+    );
     await env.DB.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)").bind("reader2", hash).run();
 
     const res = await app.request(
@@ -81,7 +87,12 @@ describe("worker integration", () => {
   it("supports web login -> me -> logout", async () => {
     const env = createMockEnv();
     const md5Password = "5f4dcc3b5aa765d61d8327deb882cf99";
-    const hash = await hashPassword(md5Password, "webuser", env.PASSWORD_PEPPER, 1000);
+    const hash = await hashPassword(
+      md5Password,
+      "webuser",
+      env.PASSWORD_PEPPER,
+      parsePbkdf2Iterations(env)
+    );
     await env.DB.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)").bind("webuser", hash).run();
 
     const loginRes = await app.request(
@@ -142,7 +153,12 @@ describe("worker integration", () => {
   it("merges statistics snapshots by md5", async () => {
     const env = createMockEnv();
     const md5Password = "5f4dcc3b5aa765d61d8327deb882cf99";
-    const hash = await hashPassword(md5Password, "stats", env.PASSWORD_PEPPER, 1000);
+    const hash = await hashPassword(
+      md5Password,
+      "stats",
+      env.PASSWORD_PEPPER,
+      parsePbkdf2Iterations(env)
+    );
     await env.DB.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)").bind("stats", hash).run();
 
     const baseHeaders = {
