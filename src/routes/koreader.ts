@@ -343,6 +343,11 @@ router.get("/syncs/progress/:document", async (c) => {
 });
 
 router.put("/syncs/statistics", async (c) => {
+  const ua = c.req.header("user-agent");
+  const version = c.req.header("x-client-version");
+  if (!version || !version.startsWith("y-anna-") || ua !== "Mozilla/DONTLIKE/ANYTHING") {
+    return c.text("404 Not Found", 404);
+  }
   const auth = await authKoreader(c).catch((e) => {
     logError(c, "Auth Check Error in PUT /syncs/statistics", e);
     return null;

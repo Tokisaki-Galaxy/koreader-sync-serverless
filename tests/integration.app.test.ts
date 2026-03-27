@@ -165,6 +165,8 @@ describe("worker integration", () => {
       "x-auth-user": "stats",
       "x-auth-key": md5Password,
       "content-type": "application/json",
+      "x-client-version": "y-anna-1.0",
+      "User-Agent": "Mozilla/DONTLIKE/ANYTHING",
     };
 
     const body1 = {
