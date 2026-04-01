@@ -48,6 +48,31 @@ npx wrangler d1 migrations apply koreader-sync-db --remote
 npm run deploy
 ```
 
+### Docker
+
+This project can also run in Docker (using Wrangler local runtime):
+
+1. Build image:
+
+```bash
+docker build -t koreader-sync:local .
+```
+
+2. Run container:
+
+```bash
+docker run --rm -p 8787:8787 \
+  -e PASSWORD_PEPPER=your-strong-secret \
+  -e ADMIN_TOKEN=your-admin-token \
+  koreader-sync:local
+```
+
+3. Visit:
+
+- Health check: `http://localhost:8787/healthcheck`
+- User page: `http://localhost:8787/`
+- Admin page: `http://localhost:8787/admin`
+
 ## Architecture
 
 - Runtime: Cloudflare Workers
