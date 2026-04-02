@@ -4,17 +4,14 @@ import { sha256, verifyPassword } from "../crypto";
 import { parsePbkdf2Iterations } from "./common";
 import type { AppContext } from "../context";
 import type { DatabaseAdapter } from "../database/adapter";
-import { D1DatabaseAdapter } from "../database/d1Adapter";
+import { resolveDatabaseAdapter } from "../context";
 
 type AppContextWithDb = AppContext & {
   get<K extends "db">(key: K): DatabaseAdapter;
 };
 
 function resolveDb(c: AppContextWithDb): DatabaseAdapter {
-  const fromVar = (c as unknown as { var?: { db?: DatabaseAdapter } }).var?.db;
-  if (fromVar) return fromVar;
-  if (c.env.DB) return new D1DatabaseAdapter(c.env.DB);
-  return c.get("db");
+  return resolveDatabaseAdapter(c);
 }
 
 export const USER_SESSION_COOKIE = "ks_session";

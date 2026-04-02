@@ -19,16 +19,20 @@ export function setFallbackDatabaseAdapter(adapter: DatabaseAdapter) {
   fallbackDbAdapter = adapter;
 }
 
+export function resolveDatabaseAdapter(c: AppContext): DatabaseAdapter {
+  if (c.env.DB) {
+    return new D1DatabaseAdapter(c.env.DB);
+  }
+  if (fallbackDbAdapter) {
+    return fallbackDbAdapter;
+  }
+  return createDatabaseAdapter(c.env);
+}
+
 export function withDatabaseAdapter(c: AppContext, next: () => Promise<void>): Promise<void> {
   const existing = c.get("db");
   if (!existing) {
-    if (c.env.DB) {
-      c.set("db", new D1DatabaseAdapter(c.env.DB));
-    } else if (fallbackDbAdapter) {
-      c.set("db", fallbackDbAdapter);
-    } else {
-      c.set("db", createDatabaseAdapter(c.env));
-    }
+    c.set("db", resolveDatabaseAdapter(c));
   }
   return next();
 }
