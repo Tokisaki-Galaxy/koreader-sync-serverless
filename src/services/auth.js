@@ -1,0 +1,64 @@
+import { getCookie } from "hono/cookie";
+import { findUserByUsername } from "../db";
+import { sha256, verifyPassword } from "../crypto";
+import { parsePbkdf2Iterations } from "./common";
+export const USER_SESSION_COOKIE = "ks_session";
+export const ADMIN_SESSION_COOKIE = "ks_admin_session";
+const TIMING_COMPARE_STEPS = 256;
+export function isValidField(field) {
+    return typeof field === "string" && field.length > 0;
+}
+export function isValidKeyField(field) {
+    return isValidField(field) && !field.includes(":");
+}
+export function timingSafeEqual(a, b) {
+    let diff = 0;
+    for (let i = 0; i < TIMING_COMPARE_STEPS; i++) {
+        const ac = i < a.length ? a.charCodeAt(i) : 0;
+        const bc = i < b.length ? b.charCodeAt(i) : 0;
+        diff |= ac ^ bc;
+    }
+    diff |= a.length ^ b.length;
+    return diff === 0;
+}
+export async function authKoreader(c) {
+    const username = c.req.header("x-auth-user");
+    const password = c.req.header("x-auth-key");
+    if (!isValidKeyField(username) || !isValidField(password))
+        return null;
+    const user = await findUserByUsername(c.env, username);
+    if (!user)
+        return null;
+    const iterations = parsePbkdf2Iterations(c.env);
+    const ok = await verifyPassword(password, user.username, c.env.PASSWORD_PEPPER, user.password_hash, iterations);
+    if (!ok)
+        return null;
+    return { userId: user.id, username: user.username };
+}
+export async function authWebUser(c) {
+    const token = getCookie(c, USER_SESSION_COOKIE);
+    if (!token)
+        return null;
+    const tokenHash = await sha256(`${token}:${c.env.PASSWORD_PEPPER}`);
+    const row = await c.env.DB.prepare(`SELECT users.id AS id, users.username AS username
+     FROM sessions
+     JOIN users ON users.id = sessions.user_id
+     WHERE sessions.token_hash = ? AND sessions.expires_at > unixepoch()
+     LIMIT 1`)
+        .bind(tokenHash)
+        .first();
+    if (!row)
+        return null;
+    return { userId: row.id, username: row.username };
+}
+export async function authAdmin(c) {
+    const adminToken = getCookie(c, ADMIN_SESSION_COOKIE);
+    const expectedToken = c.env.ADMIN_TOKEN ?? "";
+    if (!adminToken || !expectedToken)
+        return null;
+    const expectedTokenHash = await sha256(`${expectedToken}:${c.env.PASSWORD_PEPPER}`);
+    const ok = timingSafeEqual(adminToken, expectedTokenHash);
+    if (!ok)
+        return null;
+    return { mode: "token" };
+}
