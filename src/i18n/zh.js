@@ -44,7 +44,7 @@ const zh = {
         tabReadingStats: "阅读统计",
         tabSyncRecords: "进度同步",
         sourceStats: "来源 /web/stats",
-        sourceSync: "来源 /web/me",
+        sourceSync: "来源 /web/records",
         statsTitle: "个人统计",
         realtimeStats: "实时统计",
         refreshButton: "刷新",

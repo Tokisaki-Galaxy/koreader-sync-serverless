@@ -149,13 +149,25 @@ export function renderUserPage(locale: Locale): string {
       gap: 8px;
       padding: 10px;
       border-bottom: .5px solid var(--border);
+      flex-wrap: nowrap;
+      min-width: 0;
     }
-    .panel-head h4 { margin: 0; font-size: 14px; font-weight: 600; }
+    .panel-head h4 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .panel-head .pill { flex: 0 0 auto; white-space: nowrap; }
     .panel-body { padding: 10px; display: grid; gap: 8px; }
     .kv { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; }
     .kv .key { color: var(--subtle); }
     .kv .value { font-weight: 600; }
-    .source-bar { height: 4px; }
+    .source-bar { height: 4px; width: 100%; margin: 0; display: block; }
     .source-bar.stats { background: var(--stats); }
     .source-bar.sync { background: var(--primary); }
     .device-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; margin-top: 10px; }
@@ -225,6 +237,23 @@ export function renderUserPage(locale: Locale): string {
     .toolbar .field { display: inline-flex; align-items: center; gap: 6px; color: var(--subtle); font-size: 12px; }
     .toolbar input[type="number"] { width: 88px; min-width: 88px; }
     .toolbar select { border: 1px solid var(--border); border-radius: 8px; padding: 8px; font-size: 13px; }
+    .tab-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: nowrap;
+      min-width: 0;
+    }
+    .tab-title-row h4 {
+      margin: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .tab-title-row .toolbar { flex: 0 0 auto; }
     @media (max-width: 980px) {
       .grid { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
       .two-col { grid-template-columns: 1fr; }
@@ -235,6 +264,9 @@ export function renderUserPage(locale: Locale): string {
       .grid { grid-template-columns: 1fr; }
       .toolbar .field { width: 100%; }
       .toolbar .field input, .toolbar .field select { flex: 1; min-width: 0; width: auto; }
+      .tab-title-row { flex-wrap: wrap; }
+      .tab-title-row h4 { flex: 1 1 100%; white-space: nowrap; }
+      .tab-title-row .toolbar { flex: 1 1 100%; }
     }
   </style>
 </head>
@@ -308,8 +340,8 @@ export function renderUserPage(locale: Locale): string {
 
       <section class="tab-panel" id="tab-reading">
         <div class="grid" id="readingTopGrid"></div>
-        <div class="row row-between" style="margin-top: 10px;">
-          <h4 style="margin:0;">${m.statisticsBooksTitle}</h4>
+        <div class="tab-title-row" style="margin-top: 10px;">
+          <h4>${m.statisticsBooksTitle}</h4>
           <div class="toolbar">
             <label class="field">${m.booksPagerPage}
               <input id="booksPage" type="number" min="1" value="1" />

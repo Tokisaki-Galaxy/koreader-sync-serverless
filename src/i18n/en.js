@@ -44,7 +44,7 @@ const en = {
         tabReadingStats: "Reading Statistics",
         tabSyncRecords: "Sync Records",
         sourceStats: "Source /web/stats",
-        sourceSync: "Source /web/me",
+        sourceSync: "Source /web/records",
         statsTitle: "Personal Statistics",
         realtimeStats: "Real-time Stats",
         refreshButton: "Refresh",

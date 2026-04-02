@@ -46,7 +46,7 @@ const ja: LocaleMessages = {
     tabReadingStats: "読書統計",
     tabSyncRecords: "同期記録",
     sourceStats: "出典 /web/stats",
-    sourceSync: "出典 /web/me",
+    sourceSync: "出典 /web/records",
     statsTitle: "個人統計",
     realtimeStats: "リアルタイム統計",
     refreshButton: "更新",
