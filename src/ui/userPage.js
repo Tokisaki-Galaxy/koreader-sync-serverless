@@ -1,13 +1,11 @@
-import { getMessages, type Locale } from "../i18n";
-
-function toScriptJson(value: unknown): string {
-  return JSON.stringify(value).replaceAll("<", "\\u003c");
+import { getMessages } from "../i18n";
+function toScriptJson(value) {
+    return JSON.stringify(value).replaceAll("<", "\\u003c");
 }
-
-export function renderUserPage(locale: Locale): string {
-  const m = getMessages(locale).user;
-  const i18nJson = toScriptJson(m);
-  return `<!doctype html>
+export function renderUserPage(locale) {
+    const m = getMessages(locale).user;
+    const i18nJson = toScriptJson(m);
+    return `<!doctype html>
 <html lang="${locale}">
 <head>
   <meta charset="UTF-8" />

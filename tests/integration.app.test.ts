@@ -244,9 +244,21 @@ describe("worker integration", () => {
     const booksRes = await app.request("/web/statistics/books", { headers: { cookie } }, env);
     expect(booksRes.status).toBe(200);
     const booksData = await booksRes.json();
+    expect(booksData.page).toBe(1);
+    expect(booksData.pageSize).toBe(50);
+    expect(booksData.total).toBe(1);
     expect(booksData.items).toHaveLength(1);
     expect(booksData.items[0].notes).toBe(2);
     expect(booksData.items[0].total_read_time).toBe(20);
+
+    const booksResPageSize100 = await app.request(
+      "/web/statistics/books?page=1&pageSize=100",
+      { headers: { cookie } },
+      env
+    );
+    expect(booksResPageSize100.status).toBe(200);
+    const booksData100 = await booksResPageSize100.json();
+    expect(booksData100.pageSize).toBe(100);
   });
 
   it("accepts admin cookie computed from token and pepper", async () => {

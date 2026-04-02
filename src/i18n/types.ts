@@ -40,11 +40,21 @@ export interface UserMessages {
   passwordPlaceholder: string;
   loginButton: string;
   loginSuccess: string;
+  tabOverview: string;
+  tabReadingStats: string;
+  tabSyncRecords: string;
+  sourceStats: string;
+  sourceSync: string;
   statsTitle: string;
   realtimeStats: string;
   refreshButton: string;
   logoutButton: string;
   recordsTitle: string;
+  booksPagerPage: string;
+  booksPagerPageSize: string;
+  recordsToolbarSearchMd5: string;
+  recordsToolbarPage: string;
+  recordsToolbarPageSize: string;
   loadButton: string;
   tableDocument: string;
   tableProgress: string;
@@ -74,6 +84,7 @@ export interface UserMessages {
   tableReadPages: string;
   tableLastOpen: string;
   emptyStatisticsBooks: string;
+  noData: string;
 }
 
 export interface LocaleMessages {
