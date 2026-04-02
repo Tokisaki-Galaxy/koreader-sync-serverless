@@ -398,8 +398,7 @@ export function renderUserPage(locale) {
 
     function formatDate(epochSec) {
       const sec = Number(epochSec || 0);
-      if (!sec)
-        return '-';
+      if (!sec) return '-';
       return new Date(sec * MS_PER_SECOND).toLocaleString();
     }
 
@@ -407,8 +406,7 @@ export function renderUserPage(locale) {
       const sec = Math.max(0, Number(totalSeconds || 0));
       const hour = Math.floor(sec / 3600);
       const minute = Math.floor((sec % 3600) / 60);
-      if (hour > 0)
-        return hour + 'h ' + minute + 'm';
+      if (hour > 0) return hour + 'h ' + minute + 'm';
       return minute + 'm';
     }
 
@@ -418,8 +416,7 @@ export function renderUserPage(locale) {
         headers: { 'content-type': 'application/json', ...(options.headers || {}) },
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok)
-        throw new Error(data.error || data.message || I18N.requestFailed);
+      if (!res.ok) throw new Error(data.error || data.message || I18N.requestFailed);
       return data;
     }
 
@@ -429,8 +426,7 @@ export function renderUserPage(locale) {
 
     function truncateMiddle(input, left = 8, right = 6) {
       const raw = String(input || '');
-      if (raw.length <= left + right + 3)
-        return raw;
+      if (raw.length <= left + right + 3) return raw;
       return raw.slice(0, left) + '...' + raw.slice(-right);
     }
 
@@ -451,22 +447,28 @@ export function renderUserPage(locale) {
       document.getElementById('overviewTopGrid').innerHTML = topItems
         .map(([k, v]) => '<div class="stat"><div class="k">' + escapeHtml(k) + '</div><div class="v num">' + escapeHtml(v) + '</div></div>')
         .join('');
+
       document.getElementById('overviewStatsSide').innerHTML = [
         kvRow(I18N.statTotalReadPages, Number(reading.totalReadPages || 0)),
         kvRow(I18N.statLastOpen, formatDate(reading.lastOpenAt)),
       ].join('');
+
       document.getElementById('overviewSyncSide').innerHTML = [
         kvRow(I18N.statTotalDocuments, Number(summary.totalDocuments || 0)),
         kvRow(I18N.statAverageProgress, formatPercent(summary.averagePercentage)),
         kvRow(I18N.statLastSync, formatDate(summary.lastSyncAt)),
       ].join('');
+
       const devices = Array.isArray(stats.devices) ? stats.devices : [];
       document.getElementById('deviceList').innerHTML = devices.length
-        ? devices.map((d) => ('<div class="device-item">' +
-            '<span class="pill device">' + escapeHtml(d.device || I18N.noData) + '</span>' +
-            '<span class="num">' + escapeHtml(Number(d.count || 0)) + '</span>' +
-            '</div>')).join('')
+        ? devices.map((d) => (
+            '<div class="device-item">' +
+              '<span class="pill device">' + escapeHtml(d.device || I18N.noData) + '</span>' +
+              '<span class="num">' + escapeHtml(Number(d.count || 0)) + '</span>' +
+            '</div>'
+          )).join('')
         : '<div class="muted">' + escapeHtml(I18N.noData) + '</div>';
+
       document.getElementById('userInfo').textContent = I18N.userPrefix + me.username + ' (ID: ' + me.id + ')';
     }
 
@@ -498,15 +500,15 @@ export function renderUserPage(locale) {
         const tr = document.createElement('tr');
         tr.innerHTML =
           '<td>' + escapeHtml(item.title) + '</td>' +
-            '<td>' + escapeHtml(item.authors) + '</td>' +
-            '<td><span class="truncate num" title="' + escapeHtml(item.md5) + '">' + escapeHtml(truncateMiddle(item.md5, 10, 8)) + '</span></td>' +
-            '<td class="num">' + escapeHtml(pages) + '</td>' +
-            '<td>' + escapeHtml(formatDuration(item.total_read_time)) + '</td>' +
-            '<td class="read-pages">' +
-              '<span class="num">' + escapeHtml(readPages) + '</span>' +
-              '<div class="bar"><span style="width:' + escapeHtml(progress.toFixed(2)) + '%"></span></div>' +
-              '</td>' +
-            '<td>' + escapeHtml(formatDate(item.last_open)) + '</td>';
+          '<td>' + escapeHtml(item.authors) + '</td>' +
+          '<td><span class="truncate num" title="' + escapeHtml(item.md5) + '">' + escapeHtml(truncateMiddle(item.md5, 10, 8)) + '</span></td>' +
+          '<td class="num">' + escapeHtml(pages) + '</td>' +
+          '<td>' + escapeHtml(formatDuration(item.total_read_time)) + '</td>' +
+          '<td class="read-pages">' +
+            '<span class="num">' + escapeHtml(readPages) + '</span>' +
+            '<div class="bar"><span style="width:' + escapeHtml(progress.toFixed(2)) + '%"></span></div>' +
+          '</td>' +
+          '<td>' + escapeHtml(formatDate(item.last_open)) + '</td>';
         body.appendChild(tr);
       }
       document.getElementById('booksPage').value = String(page || 1);
@@ -522,10 +524,10 @@ export function renderUserPage(locale) {
         const tr = document.createElement('tr');
         tr.innerHTML =
           '<td><span class="truncate num" title="' + escapeHtml(item.document) + '">' + escapeHtml(item.document) + '</span></td>' +
-            '<td><span class="chip-progress">' + escapeHtml(progressText) + '</span></td>' +
-            '<td><span class="pill device">' + escapeHtml(item.device || I18N.noData) + '</span></td>' +
-            '<td><span class="truncate num" title="' + escapeHtml(item.device_id) + '">' + escapeHtml(truncateMiddle(item.device_id, 10, 8)) + '</span></td>' +
-            '<td>' + escapeHtml(formatDate(item.timestamp)) + '</td>';
+          '<td><span class="chip-progress">' + escapeHtml(progressText) + '</span></td>' +
+          '<td><span class="pill device">' + escapeHtml(item.device || I18N.noData) + '</span></td>' +
+          '<td><span class="truncate num" title="' + escapeHtml(item.device_id) + '">' + escapeHtml(truncateMiddle(item.device_id, 10, 8)) + '</span></td>' +
+          '<td>' + escapeHtml(formatDate(item.timestamp)) + '</td>';
         tbody.appendChild(tr);
       }
     }
@@ -565,14 +567,10 @@ export function renderUserPage(locale) {
       for (const panel of document.querySelectorAll('.tab-panel')) {
         panel.classList.toggle('active', panel.id === 'tab-' + tabName);
       }
-      if (!forceReload && tabLoaded[tabName])
-        return;
-      if (tabName === 'overview')
-        await loadOverview();
-      if (tabName === 'reading')
-        await loadReadingTab();
-      if (tabName === 'sync')
-        await loadSyncTab();
+      if (!forceReload && tabLoaded[tabName]) return;
+      if (tabName === 'overview') await loadOverview();
+      if (tabName === 'reading') await loadReadingTab();
+      if (tabName === 'sync') await loadSyncTab();
       tabLoaded[tabName] = true;
     }
 
@@ -584,8 +582,7 @@ export function renderUserPage(locale) {
         refreshBtn.classList.remove('hidden');
         logoutBtn.classList.remove('hidden');
         await activateTab('overview', true);
-      }
-      catch {
+      } catch {
         loginCard.classList.remove('hidden');
         appCard.classList.add('hidden');
         refreshBtn.classList.add('hidden');
@@ -601,8 +598,7 @@ export function renderUserPage(locale) {
         await jsonFetch('/web/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) });
         setMessage(loginMsg, I18N.loginSuccess, false);
         await ensureAuthenticated();
-      }
-      catch (e) {
+      } catch (e) {
         setMessage(loginMsg, e.message, true);
       }
     });
@@ -610,8 +606,7 @@ export function renderUserPage(locale) {
     logoutBtn.addEventListener('click', async () => {
       try {
         await jsonFetch('/web/auth/logout', { method: 'POST', body: '{}' });
-      }
-      finally {
+      } finally {
         tabLoaded.overview = false;
         tabLoaded.reading = false;
         tabLoaded.sync = false;
@@ -621,47 +616,33 @@ export function renderUserPage(locale) {
 
     tabsEl.addEventListener('click', async (e) => {
       const btn = e.target.closest('.tab-btn');
-      if (!btn)
-        return;
+      if (!btn) return;
       const tabName = btn.dataset.tab;
-      if (!tabName)
-        return;
-      try {
-        await activateTab(tabName, false);
-      }
-      catch { }
+      if (!tabName) return;
+      try { await activateTab(tabName, false); } catch {}
     });
 
     refreshBtn.addEventListener('click', async () => {
-      try {
-        await activateTab(currentTab, true);
-      }
-      catch { }
+      try { await activateTab(currentTab, true); } catch {}
     });
 
     document.getElementById('loadBooksBtn').addEventListener('click', async () => {
       try {
         await loadReadingTab();
         tabLoaded.reading = true;
-      }
-      catch { }
+      } catch {}
     });
 
     document.getElementById('loadRecordsBtn').addEventListener('click', async () => {
       try {
         await loadSyncTab();
         tabLoaded.sync = true;
-      }
-      catch { }
+      } catch {}
     });
 
     document.getElementById('recordSearch').addEventListener('input', async () => {
-      if (currentTab !== 'sync')
-        return;
-      try {
-        await loadSyncTab();
-      }
-      catch { }
+      if (currentTab !== 'sync') return;
+      try { await loadSyncTab(); } catch {}
     });
 
     ensureAuthenticated();
