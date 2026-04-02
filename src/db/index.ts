@@ -1,5 +1,5 @@
 import type { DatabaseAdapter } from "./adapter";
-import { createSqliteDatabaseAdapter } from "./sqliteAdapter";
+import { createSqliteDatabaseAdapter } from "../node/sqlite";
 import { D1DatabaseAdapter } from "./d1Adapter";
 import { resolveRuntimeTarget } from "../runtime";
 import type { Env } from "../types";

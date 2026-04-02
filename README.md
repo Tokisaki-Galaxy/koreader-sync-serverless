@@ -6,7 +6,11 @@
   <img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" />
 </p>
 
-A KOReader sync service built with **Cloudflare Worker + D1**, including:
+A KOReader sync service with decoupled runtime/data adapters, currently supporting:
+- **Cloudflare Worker + D1**
+- **Local production (Node + SQLite)**
+
+Includes:
 - KOReader-compatible sync APIs (register, auth, progress upload/fetch)
 - Admin Web UI for user management (delete user, force reset password)
 - User Web UI for personal login and statistics/records
@@ -48,23 +52,27 @@ npx wrangler d1 migrations apply koreader-sync-db --remote
 npm run deploy
 ```
 
-### Docker
+### Docker (Production-like Local Runtime)
 
-This project can also run in Docker (using Wrangler local runtime):
+Docker now runs the **Node local-production runtime** (not `wrangler dev`):
 
 1. Build image:
 
 ```bash
-docker build -t koreader-sync:local .
+docker build -t koreader-sync:prod-local .
 ```
 
 2. Run container:
 
 ```bash
 docker run --rm -p 8787:8787 \
+  -e RUNTIME_TARGET=node \
+  -e DB_DRIVER=sqlite \
+  -e SQLITE_PATH=/app/data/koreader-sync.db \
   -e PASSWORD_PEPPER=your-strong-secret \
   -e ADMIN_TOKEN=your-admin-token \
-  koreader-sync:local
+  -v $(pwd)/data:/app/data \
+  koreader-sync:prod-local
 ```
 
 3. Visit:
@@ -75,8 +83,14 @@ docker run --rm -p 8787:8787 \
 
 ## Architecture
 
-- Runtime: Cloudflare Workers
-- Database: Cloudflare D1 (SQLite)
+- Runtime targets:
+  - `cloudflare` (implemented)
+  - `node` (implemented for local production)
+  - `vercel` (reserved interface, not implemented yet)
+- Database drivers:
+  - `d1` (Cloudflare runtime)
+  - `sqlite` (Node runtime)
+  - `postgres` (reserved interface, not implemented yet)
 - Web UIs served directly by Worker:
   - `/`: user dashboard
   - `/admin`: admin console
@@ -203,6 +217,37 @@ npx wrangler d1 migrations apply koreader-sync-db --local
 npm run dev
 ```
 
+## Local Production (Node + SQLite)
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Configure environment:
+
+```bash
+cp .env.example .env
+# set PASSWORD_PEPPER and ADMIN_TOKEN
+# then set:
+# RUNTIME_TARGET=node
+# DB_DRIVER=sqlite
+# SQLITE_PATH=./data/koreader-sync.db
+```
+
+3. Run:
+
+```bash
+npm run start:local-prod
+```
+
+4. Endpoints:
+
+- Health check: `http://localhost:8787/healthcheck`
+- User page: `http://localhost:8787/`
+- Admin page: `http://localhost:8787/admin`
+
 ## Security Notes
 
 - Password hashing uses PBKDF2-SHA256 with high iteration count
@@ -216,6 +261,10 @@ REQUIRED environment variables:
 - `PASSWORD_PEPPER`: required strong secret for password/session hashing
 - `ADMIN_TOKEN`: required for admin web login
 - `SESSION_TTL_HOURS`: optional session lifetime in hours, default `168`
+Runtime / database selector:
+- `RUNTIME_TARGET`: `cloudflare` (default) or `node`; `vercel` is reserved but not implemented
+- `DB_DRIVER`: `d1` (default) or `sqlite`; `postgres` is reserved but not implemented
+- `SQLITE_PATH`: sqlite db path for `RUNTIME_TARGET=node` + `DB_DRIVER=sqlite`
 OPTIONAL environment variables:
 - `DEBUG`: optional (`"1"`/`"true"` enables debug error logs)
 - `PBKDF2_ITERATIONS`: optional number of iterations for PBKDF2 hashing, default `20000` (adjust based on your performance/security needs)

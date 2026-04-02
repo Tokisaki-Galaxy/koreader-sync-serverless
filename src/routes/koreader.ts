@@ -11,6 +11,7 @@ import { hashPassword } from "../crypto";
 import { authKoreader, isValidField, isValidKeyField } from "../services/auth";
 import { badRequest, parsePbkdf2Iterations } from "../services/common";
 import type {
+  Env,
   ProgressUpdateRequest,
   RegisterRequest,
   StatisticsBookRow,

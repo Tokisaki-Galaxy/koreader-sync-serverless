@@ -8,3 +8,5 @@ pnpm-debug.log*
 .dev.vars
 .wrangler
 .DS_Store
+tests
+tsconfig.tsbuildinfo

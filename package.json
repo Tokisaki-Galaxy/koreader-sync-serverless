@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "start:local-prod": "tsx src/node/server.ts",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck",

@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import type { DatabaseAdapter } from "./db/adapter";
-import { createDatabaseAdapter } from "./db";
+import { createDatabaseAdapter } from "./db/index";
 import type { Env } from "./types";
 
 export type AppEnv = {

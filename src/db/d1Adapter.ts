@@ -1,7 +1,11 @@
 import type { DatabaseAdapter, SqlRunResult, SqlStatement } from "./adapter";
 
 class D1StatementAdapter implements SqlStatement {
-  constructor(private readonly statement: D1PreparedStatement) {}
+  private statement: D1PreparedStatement;
+
+  constructor(statement: D1PreparedStatement) {
+    this.statement = statement;
+  }
 
   bind(...values: unknown[]): SqlStatement {
     this.statement = this.statement.bind(...values);
