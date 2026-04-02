@@ -1,5 +1,4 @@
 import type { DatabaseAdapter } from "./adapter";
-import { createSqliteDatabaseAdapter } from "../node/sqlite";
 import { D1DatabaseAdapter } from "./d1Adapter";
 import { resolveRuntimeTarget } from "../runtime";
 import type { Env } from "../types";
@@ -17,11 +16,7 @@ export function createDatabaseAdapter(env: Env): DatabaseAdapter {
   const runtime = resolveRuntimeTarget(env.RUNTIME_TARGET);
   const driver = resolveDatabaseDriver(env.DB_DRIVER);
   if (runtime === "node") {
-    if (driver === "postgres") {
-      throw new Error("DB_DRIVER=postgres is reserved and not implemented yet");
-    }
-    const sqlitePath = env.SQLITE_PATH?.trim() || "./data/koreader-sync.db";
-    return createSqliteDatabaseAdapter(sqlitePath);
+    throw new Error(`Runtime target 'node' requires node-only bootstrap (driver=${driver})`);
   }
   if (runtime === "vercel") {
     throw new Error("Runtime target 'vercel' is reserved and not implemented yet");
