@@ -1,7 +1,8 @@
 import type { Context } from "hono";
-import type { DatabaseAdapter } from "./db/adapter";
-import { createDatabaseAdapter } from "./db/index";
+import type { DatabaseAdapter } from "./database/adapter";
+import { createDatabaseAdapter } from "./database/index";
 import type { Env } from "./types";
+import { D1DatabaseAdapter } from "./database/d1Adapter";
 
 export type AppEnv = {
   Bindings: Env;
@@ -21,7 +22,9 @@ export function setFallbackDatabaseAdapter(adapter: DatabaseAdapter) {
 export function withDatabaseAdapter(c: AppContext, next: () => Promise<void>): Promise<void> {
   const existing = c.get("db");
   if (!existing) {
-    if (fallbackDbAdapter) {
+    if (c.env.DB) {
+      c.set("db", new D1DatabaseAdapter(c.env.DB));
+    } else if (fallbackDbAdapter) {
       c.set("db", fallbackDbAdapter);
     } else {
       c.set("db", createDatabaseAdapter(c.env));

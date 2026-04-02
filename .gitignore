@@ -8,3 +8,5 @@ server.js
 .DS_Store
 *.AppImage
 squashfs-root/
+src/**/*.js
+tsconfig.tsbuildinfo

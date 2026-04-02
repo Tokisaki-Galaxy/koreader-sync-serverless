@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import type { DatabaseAdapter } from "../db/adapter";
+import type { DatabaseAdapter } from "../database/adapter";
 
 const require = createRequire(import.meta.url);
 type NodeSqlite = {

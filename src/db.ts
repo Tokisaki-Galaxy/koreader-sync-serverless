@@ -1,4 +1,4 @@
-import type { DatabaseAdapter } from "./db/adapter";
+import type { DatabaseAdapter } from "./database/adapter";
 import type { ProgressRow, UserRow } from "./types";
 import initMigrationSql from "../migrations/0001_init.sql";
 import statisticsMigrationSql from "../migrations/0002_statistics_sync.sql";

@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { createApp } from "../app";
-import { createDatabaseAdapter } from "../db/index";
+import { createDatabaseAdapter } from "../database/index";
 import type { Env } from "../types";
 import { setFallbackDatabaseAdapter } from "../context";
 
