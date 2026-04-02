@@ -1,7 +1,16 @@
 import { getCookie } from "hono/cookie";
-import { findUserByUsername } from "../db";
+import { findUserByUsername, findWebUserBySessionTokenHash } from "../db";
 import { sha256, verifyPassword } from "../crypto";
 import { parsePbkdf2Iterations } from "./common";
+import { D1DatabaseAdapter } from "../database/d1Adapter";
+function resolveDb(c) {
+    const fromVar = c.var?.db;
+    if (fromVar)
+        return fromVar;
+    if (c.env.DB)
+        return new D1DatabaseAdapter(c.env.DB);
+    return c.get("db");
+}
 export const USER_SESSION_COOKIE = "ks_session";
 export const ADMIN_SESSION_COOKIE = "ks_admin_session";
 const TIMING_COMPARE_STEPS = 256;
@@ -26,7 +35,7 @@ export async function authKoreader(c) {
     const password = c.req.header("x-auth-key");
     if (!isValidKeyField(username) || !isValidField(password))
         return null;
-    const user = await findUserByUsername(c.env, username);
+    const user = await findUserByUsername(resolveDb(c), username);
     if (!user)
         return null;
     const iterations = parsePbkdf2Iterations(c.env);
@@ -40,13 +49,7 @@ export async function authWebUser(c) {
     if (!token)
         return null;
     const tokenHash = await sha256(`${token}:${c.env.PASSWORD_PEPPER}`);
-    const row = await c.env.DB.prepare(`SELECT users.id AS id, users.username AS username
-     FROM sessions
-     JOIN users ON users.id = sessions.user_id
-     WHERE sessions.token_hash = ? AND sessions.expires_at > unixepoch()
-     LIMIT 1`)
-        .bind(tokenHash)
-        .first();
+    const row = await findWebUserBySessionTokenHash(resolveDb(c), tokenHash);
     if (!row)
         return null;
     return { userId: row.id, username: row.username };

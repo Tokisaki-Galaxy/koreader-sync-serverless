@@ -177,7 +177,7 @@ router.post("/users/create", async (c) => {
     try {
         const iterations = parsePbkdf2Iterations(c.env);
         const passwordHash = await hashPassword(md5(password), username, c.env.PASSWORD_PEPPER, iterations);
-        await createUser(c.env, username, passwordHash);
+        await createUser(c.get("db"), username, passwordHash);
         return c.json({ username }, 201);
     }
     catch (error) {
@@ -235,7 +235,7 @@ router.put("/syncs/progress", async (c) => {
     }
     try {
         const timestamp = Math.floor(Date.now() / 1000);
-        await upsertProgress(c.env, auth.userId, {
+        await upsertProgress(c.get("db"), auth.userId, {
             document,
             progress,
             percentage,
@@ -262,7 +262,7 @@ router.get("/syncs/progress/:document", async (c) => {
         return c.json({ message: DOCUMENT_MISSING_MESSAGE }, 403);
     }
     try {
-        const row = await getLatestProgressByDocument(c.env, auth.userId, document);
+        const row = await getLatestProgressByDocument(c.get("db"), auth.userId, document);
         // KOReader compatibility: official server always returns 200 and includes the document key.
         if (!row)
             return c.json({ document });
@@ -315,10 +315,10 @@ router.put("/syncs/statistics", async (c) => {
         books: incomingBooksRaw.map(normalizeBook).filter((row) => row !== null),
     };
     try {
-        const existing = await getStatisticsSnapshot(c.env, auth.userId);
+        const existing = await getStatisticsSnapshot(c.get("db"), auth.userId);
         const existingSnapshot = existing ? parseSnapshotFromJson(existing.snapshot_json) : null;
         const mergedSnapshot = mergeSnapshots(existingSnapshot, incomingSnapshot);
-        await upsertStatisticsSnapshot(c.env, auth.userId, schemaVersion, device, deviceId, JSON.stringify(mergedSnapshot));
+        await upsertStatisticsSnapshot(c.get("db"), auth.userId, schemaVersion, device, deviceId, JSON.stringify(mergedSnapshot));
         return c.json({
             ok: true,
             snapshot: mergedSnapshot,
