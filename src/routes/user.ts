@@ -188,18 +188,25 @@ router.get("/web/stats", async (c) => {
 router.get("/web/statistics/books", async (c) => {
   const auth = await authWebUser(c);
   if (!auth) return c.json({ error: "Unauthorized" }, 401);
+  const page = Math.max(1, Number(c.req.query("page") || "1"));
+  const pageSize = c.req.query("pageSize") === "100" ? 100 : 50;
+  const offset = (page - 1) * pageSize;
 
   const statistics = await getStatisticsSnapshot(c.env, auth.userId);
-  if (!statistics) return c.json({ schemaVersion: null, items: [] });
+  if (!statistics) return c.json({ schemaVersion: null, page, pageSize, total: 0, items: [] });
   const snapshot = parseStatisticsSnapshot(statistics.snapshot_json);
   const books = (snapshot?.books ?? []).sort(
     (a, b) => Number(b.total_read_time || 0) - Number(a.total_read_time || 0)
   );
+  const pagedBooks = books.slice(offset, offset + pageSize);
   return c.json({
     schemaVersion: statistics.schema_version,
     device: statistics.device,
     deviceId: statistics.device_id,
-    items: books,
+    page,
+    pageSize,
+    total: books.length,
+    items: pagedBooks,
   });
 });
 
