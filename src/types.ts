@@ -1,6 +1,9 @@
 export interface Env {
-  DB: D1Database;
+  DB?: D1Database;
   PASSWORD_PEPPER: string;
+  RUNTIME_TARGET?: string;
+  DB_DRIVER?: string;
+  SQLITE_PATH?: string;
   DEBUG?: string;
   SESSION_TTL_HOURS?: string;
   PBKDF2_ITERATIONS?: string;

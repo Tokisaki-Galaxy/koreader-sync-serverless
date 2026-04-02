@@ -1,15 +1,23 @@
 import { Hono } from "hono";
 import { deleteCookie, setCookie } from "hono/cookie";
 import { md5 } from "js-md5";
-import { deleteUserById, getDatabaseInitStatus, initializeDatabase, listUsers, updateUserPasswordById } from "../db";
+import {
+  deleteSessionsByUserId,
+  deleteUserById,
+  getDatabaseInitStatus,
+  getUserById,
+  initializeDatabase,
+  listUsers,
+  updateUserPasswordById,
+} from "../db";
 import { hashPassword, sha256 } from "../crypto";
 import { getMessages, pickLocale } from "../i18n";
 import { ADMIN_SESSION_COOKIE, authAdmin, timingSafeEqual } from "../services/auth";
 import { badRequest, isValidPassword, parsePbkdf2Iterations, parseSessionTtlHours } from "../services/common";
 import { renderAdminPage } from "../ui/adminPage";
-import type { Env } from "../types";
+import type { AppEnv } from "../context";
 
-const router = new Hono<{ Bindings: Env }>();
+const router = new Hono<AppEnv>();
 
 router.post("/admin/auth/login", async (c) => {
   let body: { token?: string };
@@ -52,9 +60,9 @@ router.get("/admin/users", async (c) => {
   const messages = getMessages(locale).admin;
   const auth = await authAdmin(c);
   if (!auth) return c.json({ error: "Unauthorized" }, 401);
-  const status = await getDatabaseInitStatus(c.env);
+  const status = await getDatabaseInitStatus(c.get("db"));
   if (!status.initialized) return c.json({ error: messages.initRequired, code: "DB_NOT_INITIALIZED", missingTables: status.missingTables }, 409);
-  const users = await listUsers(c.env);
+  const users = await listUsers(c.get("db"));
   return c.json({ items: users });
 });
 
@@ -63,11 +71,11 @@ router.delete("/admin/users/:id", async (c) => {
   const messages = getMessages(locale).admin;
   const auth = await authAdmin(c);
   if (!auth) return c.json({ error: "Unauthorized" }, 401);
-  const status = await getDatabaseInitStatus(c.env);
+  const status = await getDatabaseInitStatus(c.get("db"));
   if (!status.initialized) return c.json({ error: messages.initRequired, code: "DB_NOT_INITIALIZED", missingTables: status.missingTables }, 409);
   const userId = Number(c.req.param("id"));
   if (!Number.isInteger(userId) || userId <= 0) return badRequest("Invalid user id");
-  const deleted = await deleteUserById(c.env, userId);
+  const deleted = await deleteUserById(c.get("db"), userId);
   if (!deleted) return c.json({ error: "User not found" }, 404);
   return c.json({ status: "ok" });
 });
@@ -77,7 +85,7 @@ router.put("/admin/users/:id/password", async (c) => {
   const messages = getMessages(locale).admin;
   const auth = await authAdmin(c);
   if (!auth) return c.json({ error: "Unauthorized" }, 401);
-  const status = await getDatabaseInitStatus(c.env);
+  const status = await getDatabaseInitStatus(c.get("db"));
   if (!status.initialized) return c.json({ error: messages.initRequired, code: "DB_NOT_INITIALIZED", missingTables: status.missingTables }, 409);
   const userId = Number(c.req.param("id"));
   if (!Number.isInteger(userId) || userId <= 0) return badRequest("Invalid user id");
@@ -92,21 +100,21 @@ router.put("/admin/users/:id/password", async (c) => {
   const newPassword = body.password || "";
   if (!isValidPassword(newPassword)) return badRequest("Password must be at least 8 characters");
 
-  const user = await c.env.DB.prepare("SELECT username FROM users WHERE id = ?").bind(userId).first<{ username: string }>();
+  const user = await getUserById(c.get("db"), userId);
   if (!user) return c.json({ error: "User not found" }, 404);
 
   const iterations = parsePbkdf2Iterations(c.env);
   const passwordHash = await hashPassword(md5(newPassword), user.username, c.env.PASSWORD_PEPPER, iterations);
-  const updated = await updateUserPasswordById(c.env, userId, passwordHash);
+  const updated = await updateUserPasswordById(c.get("db"), userId, passwordHash);
   if (!updated) return c.json({ error: "User not found" }, 404);
-  await c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId).run();
+  await deleteSessionsByUserId(c.get("db"), userId);
   return c.json({ status: "ok" });
 });
 
 router.get("/admin/init/status", async (c) => {
   const auth = await authAdmin(c);
   if (!auth) return c.json({ error: "Unauthorized" }, 401);
-  const status = await getDatabaseInitStatus(c.env);
+  const status = await getDatabaseInitStatus(c.get("db"));
   return c.json(status);
 });
 
@@ -115,7 +123,7 @@ router.post("/admin/init", async (c) => {
   const messages = getMessages(locale).admin;
   const auth = await authAdmin(c);
   if (!auth) return c.json({ error: "Unauthorized" }, 401);
-  await initializeDatabase(c.env);
+  await initializeDatabase(c.get("db"));
   return c.json({ status: "ok", message: messages.initSuccess });
 });
 
