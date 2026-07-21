@@ -182,6 +182,49 @@ router.get("/web/statistics/books", async (c) => {
   });
 });
 
+router.get("/web/stats/calendar", async (c) => {
+  const auth = await authWebUser(c);
+  if (!auth) return c.json({ error: "Unauthorized" }, 401);
+
+  const statistics = await getStatisticsSnapshot(c.get("db"), auth.userId);
+  const dailyMinutes: Record<string, number> = {};
+
+  if (statistics) {
+    try {
+      const parsed = JSON.parse(statistics.snapshot_json) as Record<string, unknown>;
+      const books = Array.isArray(parsed.books) ? parsed.books : [];
+      for (const book of books) {
+        if (!book || typeof book !== "object") continue;
+        const pageStats = Array.isArray((book as Record<string, unknown>).page_stat_data)
+          ? (book as Record<string, unknown>).page_stat_data
+          : [];
+        for (const stat of pageStats) {
+          if (!stat || typeof stat !== "object") continue;
+          const rec = stat as Record<string, unknown>;
+          const startTime = Number(rec.start_time);
+          const duration = Number(rec.duration);
+          if (!Number.isFinite(startTime) || !Number.isFinite(duration) || duration <= 0) continue;
+          const date = new Date(startTime * 1000);
+          const key = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+          dailyMinutes[key] = (dailyMinutes[key] || 0) + Math.round(duration / 60);
+        }
+      }
+    } catch {}
+  }
+
+  const days = Object.entries(dailyMinutes)
+    .map(([date, minutes]) => ({ date, minutes }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const years: number[] = [];
+  for (const d of days) {
+    const y = Number(d.date.slice(0, 4));
+    if (!years.includes(y)) years.push(y);
+  }
+
+  return c.json({ years, days });
+});
+
 router.get("/", (c) => {
   const locale = pickLocale(c.req.header("accept-language"));
   return c.html(renderUserPage(locale));
