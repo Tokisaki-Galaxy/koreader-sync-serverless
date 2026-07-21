@@ -15,7 +15,7 @@ Includes:
 - Admin Web UI for user management (delete user, force reset password)
 - User Web UI for personal login and statistics/records
 
-![User Web UI 1](https://github.com/user-attachments/assets/145bd4f5-eae9-485d-a142-516d2be720bf)
+![User Web UI 1](https://github.com/user-attachments/assets/f38570a1-4421-42bc-a524-2e624cab1ca5)
 ![User Web UI 2](https://github.com/user-attachments/assets/cea579c4-ee79-4db4-a173-e190855b033a)
 
 
