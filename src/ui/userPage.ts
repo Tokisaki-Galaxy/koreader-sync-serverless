@@ -562,7 +562,7 @@ export function renderUserPage(locale: Locale): string {
         return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
       },
     };
-    const dateFmt = localStorage.getItem('koreader_date_format') || 'locale';
+    let dateFmt = localStorage.getItem('koreader_date_format') || 'locale';
     const loginCard = document.getElementById('loginCard');
     const appCard = document.getElementById('appCard');
     const loginMsg = document.getElementById('loginMsg');
