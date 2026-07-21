@@ -389,8 +389,8 @@ export function renderUserPage(locale: Locale): string {
     .cal-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
     .cal-toolbar label { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
     .cal-toolbar select { padding: 4px 8px; font-size: 13px; min-width: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); color: var(--text); }
-    .cal-wrap { overflow-x: auto; padding: 4px 0 10px; }
-    .cal-chart { display: inline-block; }
+    .cal-wrap { overflow-x: auto; padding: 4px 0 10px; text-align: center; }
+    .cal-chart { display: inline-block; text-align: left; }
     .cal-svg { display: block; }
     .cal-svg text { fill: var(--text-secondary); font-size: 10px; }
     .cal-cell { rx: 2; ry: 2; }
