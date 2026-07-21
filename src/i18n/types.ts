@@ -85,6 +85,10 @@ export interface UserMessages {
   tableLastOpen: string;
   emptyStatisticsBooks: string;
   noData: string;
+  dateFormatLabel: string;
+  dateFormatLocale: string;
+  dateFormatShort: string;
+  dateFormatIso: string;
 }
 
 export interface LocaleMessages {
