@@ -115,10 +115,10 @@ export function renderAdminPage(locale: Locale): string {
 
     <section class="card" id="loginCard">
       <h3 style="margin-top:0;">${m.loginSection}</h3>
-      <div class="row">
+      <form class="row" id="loginForm" action="javascript:;">
         <input id="token" type="password" placeholder="${m.tokenPlaceholder}" />
-        <button id="loginBtn">${m.loginButton}</button>
-      </div>
+        <button id="loginBtn" type="submit">${m.loginButton}</button>
+      </form>
       <p id="loginMsg" class="text-secondary" style="margin-top:8px;"></p>
     </section>
 
@@ -269,7 +269,8 @@ export function renderAdminPage(locale: Locale): string {
       }
     }
 
-    document.getElementById('loginBtn').addEventListener('click', async () => {
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
       const token = document.getElementById('token').value;
       try {
         await jsonFetch('/admin/auth/login', { method: 'POST', body: JSON.stringify({ token }) });
