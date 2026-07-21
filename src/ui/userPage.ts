@@ -410,6 +410,53 @@ export function renderUserPage(locale: Locale): string {
     }
     .cal-tooltip.visible { opacity: 1; }
     .cal-empty { color: var(--text-secondary); text-align: center; padding: 40px 0; font-size: 13px; }
+    .mc-wrap { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--border); }
+    .mc-header { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 14px; }
+    .mc-title { font-size: 16px; font-weight: 600; min-width: 140px; text-align: center; }
+    .mc-btn {
+      background: transparent; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      color: var(--text-secondary); cursor: pointer; padding: 4px 10px; font-size: 14px; line-height: 1;
+      transition: color var(--transition), border-color var(--transition), background var(--transition);
+    }
+    .mc-btn:hover { color: var(--text); border-color: var(--text-secondary); background: var(--surface-hover); }
+    .mc-btn:active { transform: scale(.95); }
+    .mc-grid {
+      display: grid;
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+    .mc-cell {
+      background: var(--surface);
+      min-height: 100px;
+      padding: 3px 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      font-size: 10px;
+    }
+    .mc-cell.other-month { background: var(--surface-hover); opacity: .5; }
+    .mc-cell.today { box-shadow: inset 0 0 0 1.5px var(--primary); }
+    .mc-day-num { font-weight: 700; font-size: 12px; color: var(--text); }
+    .mc-day-num.weekend { color: var(--danger); }
+    .mc-dow { color: var(--text-secondary); font-size: 9px; text-transform: uppercase; }
+    .mc-books-area { flex: 1; display: flex; flex-direction: column; gap: 1px; overflow: hidden; min-height: 0; }
+    .mc-book-bar {
+      display: block; border-radius: 2px; padding: 1px 3px; font-size: 9px; line-height: 1.3;
+      overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #fff; font-weight: 500;
+      cursor: default;
+    }
+    .mc-book-bar:hover { filter: brightness(1.15); }
+    .mc-hour-area { height: 22px; display: flex; align-items: flex-end; gap: 1px; flex-shrink: 0; }
+    .mc-hour-bar { width: 2px; border-radius: 1px 1px 0 0; flex-shrink: 0; background: var(--primary); }
+    .mc-hour-bar.h0 { opacity: .25; }
+    .mc-hour-bar.h1 { opacity: .4; }
+    .mc-hour-bar.h2 { opacity: .55; }
+    .mc-hour-bar.h3 { opacity: .7; }
+    .mc-hour-bar.h4 { opacity: .85; }
+    .mc-hour-bar.h5 { opacity: 1; }
     @media (prefers-color-scheme: dark) { .cal-tooltip { background: #f1f5f9; color: #0f172a; } }
     @media (max-width: 980px) {
       .grid { grid-template-columns: repeat(2, 1fr); }
@@ -590,6 +637,16 @@ export function renderUserPage(locale: Locale): string {
         </div>
         <div id="calContainer" class="cal-wrap"></div>
         <div id="calEmpty" class="cal-empty hidden">${m.noData}</div>
+        <div class="mc-wrap" id="monthCal">
+          <div class="mc-header">
+            <button class="mc-btn" data-mc="year-prev">«</button>
+            <button class="mc-btn" data-mc="month-prev">‹</button>
+            <span class="mc-title" id="mcTitle"></span>
+            <button class="mc-btn" data-mc="month-next">›</button>
+            <button class="mc-btn" data-mc="year-next">»</button>
+          </div>
+          <div class="mc-grid" id="mcGrid"></div>
+        </div>
       </section>
     </section>
   </div>
@@ -899,6 +956,189 @@ export function renderUserPage(locale: Locale): string {
     async function loadCalendarTab() {
       const data = await jsonFetch('/web/stats/calendar');
       renderCalendar(data.days || [], data.years || []);
+      loadMonthCalendar(new Date().getFullYear(), new Date().getMonth() + 1);
+    }
+
+    function getBookColor(md5) {
+      var hash = 0;
+      for (var i = 0; i < md5.length; i++) {
+        hash = ((hash << 5) - hash) + md5.charCodeAt(i);
+        hash = hash & hash;
+      }
+      var h = Math.abs(hash) % 360;
+      var s = 55 + (Math.abs(hash * 7) % 15);
+      var l = 45 + (Math.abs(hash * 13) % 15);
+      return 'hsl(' + h + ', ' + s + '%, ' + l + '%)';
+    }
+
+    function getBookRanges(days) {
+      var dateKeys = Object.keys(days).sort();
+      var ranges = [];
+      var i = 0;
+      while (i < dateKeys.length) {
+        var start = dateKeys[i];
+        var end = start;
+        var j = i + 1;
+        while (j < dateKeys.length) {
+          var next = new Date(end);
+          next.setDate(next.getDate() + 1);
+          var nextKey = next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0') + '-' + String(next.getDate()).padStart(2, '0');
+          if (dateKeys[j] === nextKey) {
+            end = dateKeys[j];
+            j++;
+          } else {
+            break;
+          }
+        }
+        ranges.push({ start: start, end: end });
+        i = j;
+      }
+      return ranges;
+    }
+
+    function renderMonthCalendar(data, year, month) {
+      var grid = document.getElementById('mcGrid');
+      var title = document.getElementById('mcTitle');
+      if (!data || !data.books || Object.keys(data.books).length === 0) {
+        title.textContent = new Date(year, month - 1).toLocaleDateString('en', { year: 'numeric', month: 'long' });
+        grid.innerHTML = '<div class="text-secondary" style="grid-column:1/-1;padding:20px;text-align:center;">' + escapeHtml(I18N.noData) + '</div>';
+        return;
+      }
+
+      title.textContent = new Date(year, month - 1).toLocaleDateString('en', { year: 'numeric', month: 'long' });
+
+      var daysInMonth = new Date(year, month, 0).getDate();
+      var firstDow = new Date(year, month - 1, 1).getDay();
+      var today = new Date();
+      var todayKey = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+      var curYear = today.getFullYear();
+      var curMonth = today.getMonth() + 1;
+
+      var totalCols = daysInMonth;
+      grid.style.gridTemplateColumns = 'repeat(' + totalCols + ', 1fr)';
+
+      var books = data.books;
+      var md5s = Object.keys(books);
+
+      var allRanges = [];
+      for (var bi = 0; bi < md5s.length; bi++) {
+        var bk = books[md5s[bi]];
+        var ranges = getBookRanges(bk.days);
+        for (var ri = 0; ri < ranges.length; ri++) {
+          var startDay = Number(ranges[ri].start.split('-')[2]);
+          var endDay = Number(ranges[ri].end.split('-')[2]);
+          allRanges.push({ md5: md5s[bi], title: bk.title, startDay: startDay, endDay: endDay });
+        }
+      }
+
+      allRanges.sort(function(a, b) { return a.startDay - b.startDay || a.endDay - b.endDay; });
+
+      var tracks = [];
+      for (var ri = 0; ri < allRanges.length; ri++) {
+        var range = allRanges[ri];
+        var placed = false;
+        for (var ti = 0; ti < tracks.length; ti++) {
+          var conflict = false;
+          for (var ci = 0; ci < tracks[ti].length; ci++) {
+            var existing = tracks[ti][ci];
+            if (range.startDay <= existing.endDay && range.endDay >= existing.startDay) {
+              conflict = true;
+              break;
+            }
+          }
+          if (!conflict) {
+            tracks[ti].push(range);
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) {
+          tracks.push([range]);
+        }
+      }
+
+      var cells = '';
+      for (var d = 1; d <= daysInMonth; d++) {
+        var dateObj = new Date(year, month - 1, d);
+        var dow = dateObj.getDay();
+        var dowNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        var dateKey = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+        var isToday = dateKey === todayKey;
+        var isWeekend = dow === 0 || dow === 6;
+        var cls = 'mc-cell';
+        if (isToday) cls += ' today';
+
+        cells += '<div class="' + cls + '">';
+        cells += '<div><span class="mc-day-num' + (isWeekend ? ' weekend' : '') + '">' + d + '</span> <span class="mc-dow">' + dowNames[dow] + '</span></div>';
+        cells += '<div class="mc-books-area" id="mcBooks-' + d + '"></div>';
+        cells += '<div class="mc-hour-area" id="mcHours-' + d + '"></div>';
+        cells += '</div>';
+      }
+      grid.innerHTML = cells;
+
+      for (var ti = 0; ti < tracks.length; ti++) {
+        for (var ci = 0; ci < tracks[ti].length; ci++) {
+          var r = tracks[ti][ci];
+          var color = getBookColor(r.md5);
+          var el = document.createElement('div');
+          el.className = 'mc-book-bar';
+          el.style.backgroundColor = color;
+          el.style.gridColumn = r.startDay + ' / ' + (r.endDay + 1);
+          el.textContent = r.title;
+          el.title = r.title;
+          var targetCell = document.getElementById('mcBooks-' + r.startDay);
+          if (targetCell) {
+            targetCell.style.display = 'flex';
+            targetCell.style.flexDirection = 'column';
+            targetCell.style.gap = '1px';
+            targetCell.appendChild(el);
+          }
+        }
+      }
+
+      for (var d = 1; d <= daysInMonth; d++) {
+        var dateKey = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+        var hourTotals = [];
+        var maxHour = 0;
+        for (var h = 0; h < 24; h++) {
+          hourTotals[h] = 0;
+        }
+        for (var bi = 0; bi < md5s.length; bi++) {
+          var bk = books[md5s[bi]];
+          if (bk.days[dateKey]) {
+            var hours = bk.days[dateKey];
+            for (var h in hours) {
+              hourTotals[Number(h)] += hours[h];
+            }
+          }
+        }
+        for (var h = 0; h < 24; h++) {
+          if (hourTotals[h] > maxHour) maxHour = hourTotals[h];
+        }
+        var hourArea = document.getElementById('mcHours-' + d);
+        if (hourArea) {
+          if (maxHour === 0) { hourArea.innerHTML = ''; continue; }
+          var html = '';
+          for (var h = 0; h < 24; h++) {
+            var ht = hourTotals[h];
+            var level = ht === 0 ? 0 : Math.min(5, Math.ceil((ht / maxHour) * 5));
+            var barH = ht === 0 ? 0 : Math.max(2, (ht / maxHour) * 20);
+            html += '<div class="mc-hour-bar h' + level + '" style="height:' + barH.toFixed(1) + 'px"></div>';
+          }
+          hourArea.innerHTML = html;
+        }
+      }
+    }
+
+    var mcYear = new Date().getFullYear();
+    var mcMonth = new Date().getMonth() + 1;
+
+    function loadMonthCalendar(year, month) {
+      mcYear = year;
+      mcMonth = month;
+      jsonFetch('/web/stats/calendar/detail?year=' + year + '&month=' + month).then(function(data) {
+        renderMonthCalendar(data, year, month);
+      }).catch(function() {});
     }
 
     async function loadOverview() {
@@ -1016,6 +1256,20 @@ export function renderUserPage(locale: Locale): string {
     document.getElementById('calContainer').addEventListener('mouseout', renderCalendarTooltip);
     document.getElementById('calYearSelect').addEventListener('change', async function() {
       try { await loadCalendarTab(); } catch {}
+    });
+
+    document.getElementById('monthCal').addEventListener('click', function(e) {
+      var btn = e.target.closest('[data-mc]');
+      if (!btn) return;
+      var action = btn.getAttribute('data-mc');
+      var y = mcYear, m = mcMonth;
+      switch (action) {
+        case 'year-prev': y--; break;
+        case 'year-next': y++; break;
+        case 'month-prev': if (--m === 0) { m = 12; y--; } break;
+        case 'month-next': if (++m === 13) { m = 1; y++; } break;
+      }
+      loadMonthCalendar(y, m);
     });
 
     document.getElementById('loadRecordsBtn').addEventListener('click', async () => {
