@@ -43,6 +43,7 @@ const en = {
         tabOverview: "Overview",
         tabReadingStats: "Reading Statistics",
         tabSyncRecords: "Sync Records",
+        tabCalendar: "Activity",
         sourceStats: "Source /web/stats",
         sourceSync: "Source /web/records",
         statsTitle: "Personal Statistics",

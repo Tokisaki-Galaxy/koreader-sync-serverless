@@ -43,6 +43,7 @@ const ja = {
         tabOverview: "概要",
         tabReadingStats: "読書統計",
         tabSyncRecords: "同期記録",
+        tabCalendar: "読書活動",
         sourceStats: "出典 /web/stats",
         sourceSync: "出典 /web/records",
         statsTitle: "個人統計",
