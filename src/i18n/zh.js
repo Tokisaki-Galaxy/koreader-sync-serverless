@@ -85,6 +85,10 @@ const zh = {
         tableLastOpen: "最后打开",
         emptyStatisticsBooks: "暂无同步的阅读统计书籍。",
         noData: "暂无数据",
+        dateFormatLabel: "日期格式",
+        dateFormatLocale: "语言环境",
+        dateFormatShort: "DD.MM.YYYY, HH:mm",
+        dateFormatIso: "ISO 8601",
     },
 };
 export default zh;

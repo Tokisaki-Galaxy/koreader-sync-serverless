@@ -88,6 +88,10 @@ const ja: LocaleMessages = {
     tableLastOpen: "最終オープン",
     emptyStatisticsBooks: "同期済みの読書統計書籍はまだありません。",
     noData: "データなし",
+    dateFormatLabel: "日付形式",
+    dateFormatLocale: "ロケール",
+    dateFormatShort: "DD.MM.YYYY, HH:mm",
+    dateFormatIso: "ISO 8601",
   },
 };
 

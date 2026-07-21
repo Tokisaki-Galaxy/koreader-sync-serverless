@@ -85,6 +85,10 @@ const en = {
         tableLastOpen: "Last Open",
         emptyStatisticsBooks: "No synchronized statistics books yet.",
         noData: "No data",
+        dateFormatLabel: "Date Format",
+        dateFormatLocale: "Locale",
+        dateFormatShort: "DD.MM.YYYY, HH:mm",
+        dateFormatIso: "ISO 8601",
     },
 };
 export default en;
