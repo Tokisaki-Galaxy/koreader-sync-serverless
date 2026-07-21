@@ -1173,24 +1173,13 @@ export function renderUserPage(locale: Locale): string {
           for (var ti = 0; ti < localTracks.length; ti++) {
             for (var ci = 0; ci < localTracks[ti].length; ci++) {
               var r = localTracks[ti][ci];
-              if (d === r.startDay) {
-                var color = getBookColor(r.md5);
-                var el = document.createElement('div');
-                el.className = 'mc-book-bar';
-                el.style.backgroundColor = color;
-
-                var spanCols = 0;
-                for (var sd = r.startDay; sd <= Math.min(r.endDay, daysInMonth); sd++) {
-                  var sp = firstCol + sd - 1;
-                  var sr = Math.floor(sp / 7) + 2;
-                  if (sr === dayRow) spanCols++;
-                  else break;
-                }
-
-                el.textContent = r.title;
-                el.title = r.title;
-                booksArea.appendChild(el);
-              }
+              var color = getBookColor(r.md5);
+              var el = document.createElement('div');
+              el.className = 'mc-book-bar';
+              el.style.backgroundColor = color;
+              el.textContent = r.title;
+              el.title = r.title;
+              booksArea.appendChild(el);
             }
           }
         }
