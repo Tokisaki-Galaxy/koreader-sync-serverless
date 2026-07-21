@@ -15,6 +15,21 @@ Includes:
 - Admin Web UI for user management (delete user, force reset password)
 - User Web UI for personal login and statistics/records
 
+![User Web UI 1](https://github.com/user-attachments/assets/145bd4f5-eae9-485d-a142-516d2be720bf)
+![User Web UI 2](https://github.com/user-attachments/assets/cea579c4-ee79-4db4-a173-e190855b033a)
+
+
+You can also check out [this site](https://ksync.api.tski.uk/) (Cloudflare Worker + D1) to see how it works.
+
+## How to use
+
+For example, I use public server at `https://ksync.api.tski.uk/`.
+
+1. Download and install [this repo](https://github.com/Tokisaki-Galaxy/koreader-kosync2.kolpugin) to your KOReader device
+2. Click the settings icon and configure the plugin, set the server URL to `https://ksync.api.tski.uk/`.
+3. Click the register button to create a new account, or log in with your existing credentials.
+4. If you want to use the web dashboard, visit `https://ksync.api.tski.uk/` in your browser and log in with your KOReader credentials.
+
 ## Deployment
 
 ### WEB
