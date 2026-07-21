@@ -195,9 +195,8 @@ router.get("/web/stats/calendar", async (c) => {
       const books = Array.isArray(parsed.books) ? parsed.books : [];
       for (const book of books) {
         if (!book || typeof book !== "object") continue;
-        const pageStats = Array.isArray((book as Record<string, unknown>).page_stat_data)
-          ? (book as Record<string, unknown>).page_stat_data
-          : [];
+        const rawStats = (book as Record<string, unknown>).page_stat_data;
+        const pageStats: unknown[] = Array.isArray(rawStats) ? rawStats : [];
         for (const stat of pageStats) {
           if (!stat || typeof stat !== "object") continue;
           const rec = stat as Record<string, unknown>;
