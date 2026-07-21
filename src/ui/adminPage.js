@@ -171,7 +171,7 @@ export function renderAdminPage(locale) {
         return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
       },
     };
-    const dateFmt = localStorage.getItem('koreader_date_format') || 'locale';
+    let dateFmt = localStorage.getItem('koreader_date_format') || 'locale';
     const loginCard = document.getElementById('loginCard');
     const adminCard = document.getElementById('adminCard');
     const initCard = document.getElementById('initCard');
