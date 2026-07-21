@@ -37,6 +37,11 @@ export function renderUserPage(locale: Locale): string {
       --radius-sm: 6px;
       --radius-full: 999px;
       --transition: .15s ease;
+      --cal-0: #ebedf0;
+      --cal-1: #9be9a8;
+      --cal-2: #40c463;
+      --cal-3: #30a14e;
+      --cal-4: #216e39;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -58,6 +63,11 @@ export function renderUserPage(locale: Locale): string {
         --shadow-sm: 0 1px 2px 0 rgba(0,0,0,.2);
         --shadow-md: 0 4px 12px rgba(0,0,0,.3);
         --shadow-lg: 0 8px 24px rgba(0,0,0,.4);
+        --cal-0: #1b1f23;
+        --cal-1: #0e4429;
+        --cal-2: #006d32;
+        --cal-3: #26a641;
+        --cal-4: #39d353;
       }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -376,6 +386,30 @@ export function renderUserPage(locale: Locale): string {
     .skeleton-panel { height: 120px; }
     .skeleton-table { height: 300px; }
     .fmt-select { margin-left: auto; }
+    .cal-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+    .cal-toolbar label { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+    .cal-toolbar select { padding: 4px 8px; font-size: 13px; min-width: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+    .cal-wrap { overflow-x: auto; padding: 4px 0 10px; }
+    .cal-svg { display: block; }
+    .cal-svg text { fill: var(--text-secondary); font-size: 10px; }
+    .cal-cell { rx: 2; ry: 2; }
+    .cal-lv0 { fill: var(--cal-0); }
+    .cal-lv1 { fill: var(--cal-1); }
+    .cal-lv2 { fill: var(--cal-2); }
+    .cal-lv3 { fill: var(--cal-3); }
+    .cal-lv4 { fill: var(--cal-4); }
+    .cal-outside { opacity: .3; }
+    .cal-cell:hover { stroke: var(--text); stroke-width: 1; }
+    .cal-legend { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-secondary); margin-top: 8px; justify-content: flex-end; }
+    .cal-legend .swatch { width: 11px; height: 11px; border-radius: 2px; }
+    .cal-tooltip {
+      position: fixed; pointer-events: none; z-index: 100;
+      background: #1e293b; color: #fff; padding: 4px 8px; border-radius: 4px;
+      font-size: 12px; white-space: nowrap; opacity: 0; transition: opacity .12s ease;
+    }
+    .cal-tooltip.visible { opacity: 1; }
+    .cal-empty { color: var(--text-secondary); text-align: center; padding: 40px 0; font-size: 13px; }
+    @media (prefers-color-scheme: dark) { .cal-tooltip { background: #f1f5f9; color: #0f172a; } }
     @media (max-width: 980px) {
       .grid { grid-template-columns: repeat(2, 1fr); }
       .two-col { grid-template-columns: 1fr; }
@@ -443,6 +477,7 @@ export function renderUserPage(locale: Locale): string {
         <button class="tab-btn active" data-tab="overview">${m.tabOverview}</button>
         <button class="tab-btn" data-tab="reading">${m.tabReadingStats}</button>
         <button class="tab-btn" data-tab="sync">${m.tabSyncRecords}</button>
+        <button class="tab-btn" data-tab="calendar">${m.tabCalendar}</button>
       </div>
 
       <section class="tab-panel active" id="tab-overview">
@@ -545,9 +580,20 @@ export function renderUserPage(locale: Locale): string {
           </table>
         </div>
       </section>
+
+      <section class="tab-panel" id="tab-calendar">
+        <div class="cal-toolbar">
+          <label>${m.dateFormatLabel}
+            <select id="calYearSelect"></select>
+          </label>
+        </div>
+        <div id="calContainer" class="cal-wrap"></div>
+        <div id="calEmpty" class="cal-empty hidden">${m.noData}</div>
+      </section>
     </section>
   </div>
 
+  <div id="calTooltip" class="cal-tooltip"></div>
   <script>
     const I18N = ${i18nJson};
     const MS_PER_SECOND = 1000;
@@ -570,7 +616,7 @@ export function renderUserPage(locale: Locale): string {
     const refreshBtn = document.getElementById('refreshBtn');
     const logoutBtn = document.getElementById('logoutBtn');
     let currentTab = 'overview';
-    const tabLoaded = { overview: false, reading: false, sync: false };
+    const tabLoaded = { overview: false, reading: false, sync: false, calendar: false };
 
     function escapeHtml(value) {
       return String(value ?? '')
@@ -733,7 +779,126 @@ export function renderUserPage(locale: Locale): string {
       }
     }
 
-    async function loadOverview() {
+    function renderCalendar(days, years) {
+      const container = document.getElementById('calContainer');
+      const empty = document.getElementById('calEmpty');
+      const yearSelect = document.getElementById('calYearSelect');
+
+      if (!days || days.length === 0) {
+        container.innerHTML = '';
+        empty.classList.remove('hidden');
+        yearSelect.innerHTML = '';
+        return;
+      }
+      empty.classList.add('hidden');
+
+      const curYear = Number(yearSelect.value) || new Date().getFullYear();
+      yearSelect.innerHTML = years.sort().map(function(y) {
+        return '<option value="' + y + '"' + (y === curYear ? ' selected' : '') + '>' + y + '</option>';
+      }).join('');
+      const selectedYear = Number(yearSelect.value);
+
+      const minMap = {};
+      for (var i = 0; i < days.length; i++) {
+        minMap[days[i].date] = days[i].minutes;
+      }
+
+      var maxMin = 0;
+      for (var key in minMap) {
+        if (minMap[key] > maxMin) maxMin = minMap[key];
+      }
+
+      var startDate = new Date(selectedYear, 0, 1);
+      var endDate = new Date(selectedYear, 11, 31);
+      while (startDate.getDay() !== 1) {
+        startDate.setDate(startDate.getDate() - 1);
+      }
+      while (endDate.getDay() !== 0) {
+        endDate.setDate(endDate.getDate() + 1);
+      }
+
+      var weeks = [];
+      var cur = new Date(startDate);
+      while (cur <= endDate) {
+        var week = [];
+        for (var d = 0; d < 7; d++) {
+          var y = cur.getFullYear();
+          var m = String(cur.getMonth() + 1).padStart(2, '0');
+          var day = String(cur.getDate()).padStart(2, '0');
+          var key = y + '-' + m + '-' + day;
+          week.push({ key: key, min: minMap[key] || 0, inYear: cur.getFullYear() === selectedYear });
+          cur.setDate(cur.getDate() + 1);
+        }
+        weeks.push(week);
+      }
+
+      var cellSize = 13;
+      var gap = 3;
+      var w = weeks.length * (cellSize + gap);
+      var h = 7 * (cellSize + gap);
+      var dayLabels = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
+
+      var html = '<svg class="cal-svg" width="' + (w + 35) + '" height="' + (h + 22) + '">';
+
+      var monthLabels = [];
+      for (var m = 0; m < 12; m++) {
+        var firstDay = new Date(selectedYear, m, 1);
+        var weekIndex = Math.floor((firstDay - startDate) / (7 * 24 * 60 * 60 * 1000));
+        monthLabels.push({ index: weekIndex, label: firstDay.toLocaleDateString('en', { month: 'short' }) });
+      }
+      for (var mi = 0; mi < monthLabels.length; mi++) {
+        var ml = monthLabels[mi];
+        if (ml.index >= 0 && ml.index < weeks.length) {
+          html += '<text x="' + (ml.index * (cellSize + gap) + 35) + '" y="12">' + escapeHtml(ml.label) + '</text>';
+        }
+      }
+
+      for (var row = 0; row < 7; row++) {
+        if (dayLabels[row]) {
+          html += '<text x="0" y="' + (row * (cellSize + gap) + 22) + '">' + dayLabels[row] + '</text>';
+        }
+        for (var col = 0; col < weeks.length; col++) {
+          var cell = weeks[col][row];
+          if (!cell) continue;
+          var x = col * (cellSize + gap) + 35;
+          var y = row * (cellSize + gap) + 20;
+          var lv = cell.min === 0 ? 0 : Math.min(4, Math.ceil((cell.min / maxMin) * 4));
+          var cls = 'cal-cell cal-lv' + lv;
+          if (!cell.inYear) cls += ' cal-outside';
+          html += '<rect class="' + cls + '" width="' + cellSize + '" height="' + cellSize + '" x="' + x + '" y="' + y + '" data-date="' + cell.key + '" data-min="' + cell.min + '" />';
+        }
+      }
+
+      html += '</svg>';
+
+      var legendHtml = '<span>Less</span>';
+      for (var li = 0; li <= 4; li++) {
+        legendHtml += '<span class="swatch cal-lv' + li + '"></span>';
+      }
+      legendHtml += '<span>More</span>';
+
+      container.innerHTML = '<div class="cal-chart">' + html + '</div><div class="cal-legend">' + legendHtml + '</div>';
+    }
+
+    function renderCalendarTooltip(e) {
+      var el = document.getElementById('calTooltip');
+      var target = e.target;
+      if (target.tagName !== 'rect' || !target.classList.contains('cal-cell') || target.classList.contains('cal-outside')) {
+        el.classList.remove('visible');
+        return;
+      }
+      var date = target.getAttribute('data-date');
+      var min = Number(target.getAttribute('data-min') || 0);
+      el.textContent = date + ': ' + min + ' min';
+      el.classList.add('visible');
+      el.style.left = (e.clientX + 12) + 'px';
+      el.style.top = (e.clientY - 28) + 'px';
+    }
+
+    async function loadCalendarTab() {
+      const data = await jsonFetch('/web/stats/calendar');
+      renderCalendar(data.days || [], data.years || []);
+    }
       const [me, stats] = await Promise.all([jsonFetch('/web/me'), jsonFetch('/web/stats')]);
       renderOverview(me, stats);
     }
@@ -772,6 +937,7 @@ export function renderUserPage(locale: Locale): string {
       if (tabName === 'overview') await loadOverview();
       if (tabName === 'reading') await loadReadingTab();
       if (tabName === 'sync') await loadSyncTab();
+      if (tabName === 'calendar') await loadCalendarTab();
       tabLoaded[tabName] = true;
     }
 
@@ -811,6 +977,7 @@ export function renderUserPage(locale: Locale): string {
         tabLoaded.overview = false;
         tabLoaded.reading = false;
         tabLoaded.sync = false;
+        tabLoaded.calendar = false;
         await ensureAuthenticated();
       }
     });
@@ -839,6 +1006,13 @@ export function renderUserPage(locale: Locale): string {
       dateFmtEl.value = dateFmt;
       dateFmtEl.addEventListener('change', () => setDateFmt(dateFmtEl.value));
     }
+
+    document.getElementById('calContainer').addEventListener('mouseover', renderCalendarTooltip);
+    document.getElementById('calContainer').addEventListener('mousemove', renderCalendarTooltip);
+    document.getElementById('calContainer').addEventListener('mouseout', renderCalendarTooltip);
+    document.getElementById('calYearSelect').addEventListener('change', async function() {
+      try { await loadCalendarTab(); } catch {}
+    });
 
     document.getElementById('loadRecordsBtn').addEventListener('click', async () => {
       try {
