@@ -13,59 +13,90 @@ export function renderAdminPage(locale) {
   <title>${m.title}</title>
   <style>
     :root {
-      --bg: #0b1220;
-      --bg2: #111827;
-      --card: rgba(255,255,255,.92);
-      --muted: #64748b;
-      --primary: #1d4ed8;
-      --danger: #dc2626;
-      --ok: #16a34a;
+      --bg: #0f172a;
+      --surface: rgba(255,255,255,.92);
+      --surface-hover: rgba(255,255,255,.97);
+      --text: #1a2332;
+      --text-secondary: #64748b;
+      --primary: #3b82f6;
+      --primary-soft: #dbeafe;
+      --primary-hover: #2563eb;
+      --accent: #10b981;
+      --danger: #ef4444;
       --border: #e2e8f0;
+      --shadow-sm: 0 1px 2px 0 rgba(0,0,0,.08);
+      --shadow-md: 0 4px 12px rgba(0,0,0,.12);
+      --shadow-lg: 0 8px 24px rgba(0,0,0,.18);
+      --radius: 10px;
+      --radius-sm: 6px;
+      --radius-full: 999px;
+      --transition: .15s ease;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: linear-gradient(120deg, var(--bg), var(--bg2));
-      color: #0f172a;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      background: linear-gradient(135deg, #0b1220, #111827);
+      color: var(--text);
       min-height: 100vh;
       padding: 28px 16px;
     }
     .wrap { max-width: 1120px; margin: 0 auto; }
-    .title { color: #e2e8f0; margin: 0 0 10px; font-size: 30px; }
-    .subtitle { color: #cbd5e1; margin: 0 0 16px; font-size: 14px; }
+    .title { color: #e2e8f0; margin: 0 0 8px; font-size: 28px; font-weight: 700; letter-spacing: -.02em; }
+    .subtitle { color: #94a3b8; margin: 0 0 18px; font-size: 14px; }
     .card {
-      background: var(--card);
-      border: 1px solid rgba(255,255,255,.35);
-      border-radius: 16px;
-      box-shadow: 0 10px 28px rgba(2, 6, 23, .25);
+      background: var(--surface);
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
       padding: 16px;
       margin-bottom: 14px;
-      backdrop-filter: blur(8px);
+      transition: box-shadow var(--transition);
     }
+    .card:hover { box-shadow: var(--shadow-lg); }
+    .hidden { display: none !important; }
     .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    input, button {
+    .row-between { justify-content: space-between; }
+    .text-secondary { color: var(--text-secondary); font-size: 13px; margin: 0; }
+    .ok { color: var(--accent); }
+    .err { color: var(--danger); }
+    input, button, select {
       font-size: 14px;
-      border-radius: 10px;
+      border-radius: var(--radius-sm);
       padding: 10px 12px;
       border: 1px solid var(--border);
+      font-family: inherit;
+      transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
     }
-    input { min-width: 280px; }
-    button { border: 0; background: var(--primary); color: #fff; cursor: pointer; font-weight: 600; }
-    button.secondary { background: #475569; }
-    button.danger { background: var(--danger); }
-    .hidden { display: none; }
-    .muted { color: var(--muted); font-size: 13px; margin: 0; }
-    .ok { color: var(--ok); }
-    .err { color: var(--danger); }
+    input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(59,130,246,.2); }
+    button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    input, select { min-width: 280px; }
+    button {
+      cursor: pointer;
+      background: var(--primary);
+      color: #fff;
+      font-weight: 600;
+      border: 1px solid var(--primary);
+    }
+    button:hover { background: var(--primary-hover); }
+    button:active { transform: scale(.97); }
+    button.secondary { background: #475569; border-color: #475569; }
+    button.secondary:hover { background: #5a6a82; }
+    button.danger { background: var(--danger); border-color: var(--danger); }
+    button.danger:hover { background: #dc2626; }
     .badge {
-      display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px;
-      background: #dbeafe; color: #1d4ed8; font-weight: 600;
+      display: inline-block; font-size: 12px; padding: 3px 10px; border-radius: var(--radius-full);
+      background: var(--primary-soft); color: var(--primary); font-weight: 600;
     }
-    table { width: 100%; border-collapse: collapse; border-radius: 12px; overflow: hidden; }
+    table { width: 100%; border-collapse: separate; border-spacing: 0; border-radius: var(--radius); overflow: hidden; }
     th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; font-size: 13px; vertical-align: middle; }
-    th { background: #f8fafc; color: #334155; position: sticky; top: 0; }
-    .action-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    th { background: #f8fafc; color: #475569; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; position: sticky; top: 0; }
+    tr:last-child td { border-bottom: none; }
+    tbody tr { transition: background var(--transition); }
+    tbody tr:hover { background: #f1f5f9; }
+    .action-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     .action-row input { min-width: 170px; max-width: 220px; }
     @media (max-width: 760px) {
       .title { font-size: 24px; }
@@ -85,7 +116,7 @@ export function renderAdminPage(locale) {
         <input id="token" type="password" placeholder="${m.tokenPlaceholder}" />
         <button id="loginBtn">${m.loginButton}</button>
       </div>
-      <p id="loginMsg" class="muted" style="margin-top:8px;"></p>
+      <p id="loginMsg" class="text-secondary" style="margin-top:8px;"></p>
     </section>
 
     <section class="card hidden" id="adminCard">
@@ -95,14 +126,21 @@ export function renderAdminPage(locale) {
           <span class="badge">${m.adminSession}</span>
         </div>
         <div class="row">
+          <label style="font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:6px;">
+            <select id="dateFmtSelect" style="padding:4px 8px;font-size:12px;min-width:auto;border-radius:6px;border:1px solid var(--border);background:#fff;">
+              <option value="locale">Locale</option>
+              <option value="short">DD.MM.YYYY, HH:mm</option>
+              <option value="iso">ISO 8601</option>
+            </select>
+          </label>
           <button id="refreshBtn" class="secondary">${m.refreshButton}</button>
           <button id="logoutBtn" class="secondary">${m.logoutButton}</button>
         </div>
       </div>
-      <p id="adminInfo" class="muted" style="margin-top:8px;"></p>
+      <p id="adminInfo" class="text-secondary" style="margin-top:8px;"></p>
       <section class="card hidden" id="initCard" style="margin-top:10px;">
         <h4 style="margin:0 0 8px;">${m.initTitle}</h4>
-        <p class="muted" style="margin:0 0 10px;" id="initDesc">${m.initDescription}</p>
+        <p class="text-secondary" style="margin:0 0 10px;" id="initDesc">${m.initDescription}</p>
         <div class="row">
           <button id="initBtn">${m.initButton}</button>
         </div>
@@ -115,13 +153,25 @@ export function renderAdminPage(locale) {
           <tbody id="usersBody"></tbody>
         </table>
       </div>
-      <p id="adminMsg" class="muted" style="margin-top:10px;"></p>
+      <p id="adminMsg" class="text-secondary" style="margin-top:10px;"></p>
     </section>
   </div>
 
   <script>
     const I18N = ${i18nJson};
     const MS_PER_SECOND = 1000;
+    const DATE_FORMATS = {
+      locale: (d, locale) => d.toLocaleString(locale === 'zh' ? 'zh-CN' : locale === 'ja' ? 'ja-JP' : 'en-US'),
+      short: (d) => {
+        const pad = (n) => String(n).padStart(2, '0');
+        return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear() + ', ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+      },
+      iso: (d) => {
+        const pad = (n) => String(n).padStart(2, '0');
+        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+      },
+    };
+    const dateFmt = localStorage.getItem('koreader_date_format') || 'locale';
     const loginCard = document.getElementById('loginCard');
     const adminCard = document.getElementById('adminCard');
     const initCard = document.getElementById('initCard');
@@ -133,9 +183,17 @@ export function renderAdminPage(locale) {
       return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
     }
 
+    function formatDate(epochSec) {
+      const sec = Number(epochSec || 0);
+      if (!sec) return '-';
+      const locale = document.documentElement.lang || 'en';
+      const fn = DATE_FORMATS[dateFmt] || DATE_FORMATS.locale;
+      return fn(new Date(sec * MS_PER_SECOND), locale);
+    }
+
     function setMessage(el, text, isError) {
       el.textContent = text || '';
-      el.className = 'muted ' + (text ? (isError ? 'err' : 'ok') : '');
+      el.className = 'text-secondary ' + (text ? (isError ? 'err' : 'ok') : '');
     }
 
     function isDbNotInitializedError(error) {
@@ -194,7 +252,7 @@ export function renderAdminPage(locale) {
       tbody.innerHTML = '';
       for (const item of data.items || []) {
         const tr = document.createElement('tr');
-        const createdAt = item.created_at ? new Date(item.created_at * MS_PER_SECOND).toLocaleString() : '-';
+        const createdAt = formatDate(item.created_at);
         tr.innerHTML =
           '<td>' + Number(item.id) + '</td>' +
           '<td>' + escapeHtml(item.username) + '</td>' +
@@ -223,6 +281,16 @@ export function renderAdminPage(locale) {
       await jsonFetch('/admin/auth/logout', { method: 'POST', body: '{}' });
       await loadAdmin();
     });
+
+    const dateFmtEl = document.getElementById('dateFmtSelect');
+    if (dateFmtEl) {
+      dateFmtEl.value = dateFmt;
+      dateFmtEl.addEventListener('change', () => {
+        localStorage.setItem('koreader_date_format', dateFmtEl.value);
+        dateFmt = dateFmtEl.value;
+        loadUsers();
+      });
+    }
 
     document.getElementById('refreshBtn').addEventListener('click', async () => {
       try { await loadInitStatus(); } catch {}
