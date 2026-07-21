@@ -448,11 +448,11 @@ export function renderUserPage(locale: Locale): string {
   <div class="container">
     <section class="card" id="loginCard">
       <h3 style="margin: 0 0 10px;">${m.loginSection}</h3>
-      <div class="row">
+      <form class="row" id="loginForm" action="javascript:;">
         <input id="username" placeholder="${m.usernamePlaceholder}" />
         <input id="password" type="password" placeholder="${m.passwordPlaceholder}" />
-        <button id="loginBtn">${m.loginButton}</button>
-      </div>
+        <button id="loginBtn" type="submit">${m.loginButton}</button>
+      </form>
       <p id="loginMsg" class="text-secondary" style="margin-top: 8px;"></p>
     </section>
 
@@ -961,7 +961,8 @@ export function renderUserPage(locale: Locale): string {
       }
     }
 
-    document.getElementById('loginBtn').addEventListener('click', async () => {
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
       const username = document.getElementById('username').value;
       const password = document.getElementById('password').value;
       try {
