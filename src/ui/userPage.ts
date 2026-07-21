@@ -422,40 +422,85 @@ export function renderUserPage(locale: Locale): string {
     .mc-btn:active { transform: scale(.95); }
     .mc-grid {
       display: grid;
-      gap: 1px;
+      grid-template-columns: repeat(7, 1fr);
       background: var(--border);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
       overflow: hidden;
     }
+    .mc-dow-row {
+      display: contents;
+    }
+    .mc-dow-cell {
+      background: var(--surface-hover);
+      padding: 6px 4px;
+      text-align: center;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .mc-dow-cell.weekend { color: var(--danger); }
     .mc-cell {
       background: var(--surface);
-      min-height: 100px;
-      padding: 3px 4px;
+      min-height: 110px;
+      padding: 4px 5px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 10px;
+      overflow: hidden;
+    }
+    .mc-cell.other-month { background: var(--surface-hover); opacity: .4; }
+    .mc-cell.today { box-shadow: inset 0 0 0 1.5px var(--primary); }
+    .mc-day-header {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .mc-day-num { font-weight: 700; font-size: 13px; color: var(--text); }
+    .mc-day-num.weekend { color: var(--danger); }
+    .mc-dow { color: var(--text-secondary); font-size: 9px; text-transform: uppercase; display: none; }
+    .mc-books-area {
+      flex: 1;
       display: flex;
       flex-direction: column;
       gap: 1px;
-      font-size: 10px;
+      overflow: hidden;
+      min-height: 0;
+      position: relative;
     }
-    .mc-cell.other-month { background: var(--surface-hover); opacity: .5; }
-    .mc-cell.today { box-shadow: inset 0 0 0 1.5px var(--primary); }
-    .mc-day-num { font-weight: 700; font-size: 12px; color: var(--text); }
-    .mc-day-num.weekend { color: var(--danger); }
-    .mc-dow { color: var(--text-secondary); font-size: 9px; text-transform: uppercase; }
-    .mc-books-area { flex: 1; display: flex; flex-direction: column; gap: 1px; overflow: hidden; min-height: 0; }
     .mc-book-bar {
-      display: block; border-radius: 2px; padding: 1px 3px; font-size: 9px; line-height: 1.3;
-      overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #fff; font-weight: 500;
+      border-radius: 2px;
+      padding: 1px 4px;
+      font-size: 9px;
+      line-height: 1.4;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      color: #fff;
+      font-weight: 500;
       cursor: default;
+      max-width: 100%;
+      flex-shrink: 0;
     }
     .mc-book-bar:hover { filter: brightness(1.15); }
-    .mc-hour-area { height: 22px; display: flex; align-items: flex-end; gap: 1px; flex-shrink: 0; }
+    .mc-hour-area {
+      height: 20px;
+      display: flex;
+      align-items: flex-end;
+      gap: 1px;
+      flex-shrink: 0;
+      margin-top: auto;
+    }
     .mc-hour-bar { width: 2px; border-radius: 1px 1px 0 0; flex-shrink: 0; background: var(--primary); }
-    .mc-hour-bar.h0 { opacity: .25; }
-    .mc-hour-bar.h1 { opacity: .4; }
-    .mc-hour-bar.h2 { opacity: .55; }
-    .mc-hour-bar.h3 { opacity: .7; }
-    .mc-hour-bar.h4 { opacity: .85; }
+    .mc-hour-bar.h0 { opacity: .15; }
+    .mc-hour-bar.h1 { opacity: .3; }
+    .mc-hour-bar.h2 { opacity: .45; }
+    .mc-hour-bar.h3 { opacity: .6; }
+    .mc-hour-bar.h4 { opacity: .8; }
     .mc-hour-bar.h5 { opacity: 1; }
     @media (prefers-color-scheme: dark) { .cal-tooltip { background: #f1f5f9; color: #0f172a; } }
     @media (max-width: 980px) {
@@ -999,133 +1044,155 @@ export function renderUserPage(locale: Locale): string {
     function renderMonthCalendar(data, year, month) {
       var grid = document.getElementById('mcGrid');
       var title = document.getElementById('mcTitle');
+      var monthName = new Date(year, month - 1).toLocaleDateString('en', { year: 'numeric', month: 'long' });
+      title.textContent = monthName;
+
       if (!data || !data.books || Object.keys(data.books).length === 0) {
-        title.textContent = new Date(year, month - 1).toLocaleDateString('en', { year: 'numeric', month: 'long' });
-        grid.innerHTML = '<div class="text-secondary" style="grid-column:1/-1;padding:20px;text-align:center;">' + escapeHtml(I18N.noData) + '</div>';
+        grid.innerHTML = '<div class="text-secondary" style="padding:20px;text-align:center;">' + escapeHtml(I18N.noData) + '</div>';
         return;
       }
 
-      title.textContent = new Date(year, month - 1).toLocaleDateString('en', { year: 'numeric', month: 'long' });
-
       var daysInMonth = new Date(year, month, 0).getDate();
-      var firstDow = new Date(year, month - 1, 1).getDay();
+      var firstDayOfWeek = new Date(year, month - 1, 1).getDay();
+      var firstCol = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1;
       var today = new Date();
       var todayKey = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
-      var curYear = today.getFullYear();
-      var curMonth = today.getMonth() + 1;
-
-      var totalCols = daysInMonth;
-      grid.style.gridTemplateColumns = 'repeat(' + totalCols + ', 1fr)';
+      var totalCells = firstCol + daysInMonth;
+      var totalRows = Math.ceil(totalCells / 7);
 
       var books = data.books;
       var md5s = Object.keys(books);
 
-      var allRanges = [];
-      for (var bi = 0; bi < md5s.length; bi++) {
-        var bk = books[md5s[bi]];
-        var ranges = getBookRanges(bk.days);
-        for (var ri = 0; ri < ranges.length; ri++) {
-          var startDay = Number(ranges[ri].start.split('-')[2]);
-          var endDay = Number(ranges[ri].end.split('-')[2]);
-          allRanges.push({ md5: md5s[bi], title: bk.title, startDay: startDay, endDay: endDay });
-        }
+      var html = '<div class="mc-dow-row">';
+      var dowNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      for (var di = 0; di < 7; di++) {
+        var cls = 'mc-dow-cell' + (di >= 5 ? ' weekend' : '');
+        html += '<div class="' + cls + '">' + dowNames[di] + '</div>';
       }
+      html += '</div>';
 
-      allRanges.sort(function(a, b) { return a.startDay - b.startDay || a.endDay - b.endDay; });
-
-      var tracks = [];
-      for (var ri = 0; ri < allRanges.length; ri++) {
-        var range = allRanges[ri];
-        var placed = false;
-        for (var ti = 0; ti < tracks.length; ti++) {
-          var conflict = false;
-          for (var ci = 0; ci < tracks[ti].length; ci++) {
-            var existing = tracks[ti][ci];
-            if (range.startDay <= existing.endDay && range.endDay >= existing.startDay) {
-              conflict = true;
-              break;
-            }
-          }
-          if (!conflict) {
-            tracks[ti].push(range);
-            placed = true;
-            break;
-          }
-        }
-        if (!placed) {
-          tracks.push([range]);
-        }
-      }
-
-      var cells = '';
+      var dayGridPos = {};
+      var cellRow;
+      var cellCol;
       for (var d = 1; d <= daysInMonth; d++) {
+        var pos = firstCol + d - 1;
+        cellRow = Math.floor(pos / 7) + 2;
+        cellCol = (pos % 7) + 1;
+        dayGridPos[d] = { row: cellRow, col: cellCol };
+
         var dateObj = new Date(year, month - 1, d);
         var dow = dateObj.getDay();
-        var dowNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         var dateKey = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
         var isToday = dateKey === todayKey;
         var isWeekend = dow === 0 || dow === 6;
         var cls = 'mc-cell';
         if (isToday) cls += ' today';
+        var dayNumCls = 'mc-day-num' + (isWeekend ? ' weekend' : '');
 
-        cells += '<div class="' + cls + '">';
-        cells += '<div><span class="mc-day-num' + (isWeekend ? ' weekend' : '') + '">' + d + '</span> <span class="mc-dow">' + dowNames[dow] + '</span></div>';
-        cells += '<div class="mc-books-area" id="mcBooks-' + d + '"></div>';
-        cells += '<div class="mc-hour-area" id="mcHours-' + d + '"></div>';
-        cells += '</div>';
-      }
-      grid.innerHTML = cells;
-
-      for (var ti = 0; ti < tracks.length; ti++) {
-        for (var ci = 0; ci < tracks[ti].length; ci++) {
-          var r = tracks[ti][ci];
-          var color = getBookColor(r.md5);
-          var el = document.createElement('div');
-          el.className = 'mc-book-bar';
-          el.style.backgroundColor = color;
-          el.style.gridColumn = r.startDay + ' / ' + (r.endDay + 1);
-          el.textContent = r.title;
-          el.title = r.title;
-          var targetCell = document.getElementById('mcBooks-' + r.startDay);
-          if (targetCell) {
-            targetCell.style.display = 'flex';
-            targetCell.style.flexDirection = 'column';
-            targetCell.style.gap = '1px';
-            targetCell.appendChild(el);
-          }
-        }
+        html += '<div class="' + cls + '" style="grid-row:' + cellRow + ';grid-column:' + cellCol + ';">';
+        html += '<div class="mc-day-header"><span class="' + dayNumCls + '">' + d + '</span></div>';
+        html += '<div class="mc-books-area" id="mcBooks-' + d + '"></div>';
+        html += '<div class="mc-hour-area" id="mcHours-' + d + '"></div>';
+        html += '</div>';
       }
 
+      grid.innerHTML = html;
+
+      var prevMonthDays = new Date(year, month - 1, 0).getDate();
       for (var d = 1; d <= daysInMonth; d++) {
+        var pos = firstCol + d - 1;
+        var dayRow = Math.floor(pos / 7) + 2;
+        var dayCol = (pos % 7) + 1;
+
         var dateKey = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
         var hourTotals = [];
         var maxHour = 0;
-        for (var h = 0; h < 24; h++) {
-          hourTotals[h] = 0;
-        }
+        for (var h = 0; h < 24; h++) hourTotals[h] = 0;
         for (var bi = 0; bi < md5s.length; bi++) {
           var bk = books[md5s[bi]];
           if (bk.days[dateKey]) {
             var hours = bk.days[dateKey];
-            for (var h in hours) {
-              hourTotals[Number(h)] += hours[h];
-            }
+            for (var h in hours) hourTotals[Number(h)] += hours[h];
           }
         }
-        for (var h = 0; h < 24; h++) {
-          if (hourTotals[h] > maxHour) maxHour = hourTotals[h];
-        }
+        for (var h = 0; h < 24; h++) { if (hourTotals[h] > maxHour) maxHour = hourTotals[h]; }
+
         var hourArea = document.getElementById('mcHours-' + d);
         if (hourArea) {
           if (maxHour === 0) { hourArea.innerHTML = ''; continue; }
-          var html = '';
+          var hHtml = '';
           for (var h = 0; h < 24; h++) {
             var ht = hourTotals[h];
             var level = ht === 0 ? 0 : Math.min(5, Math.ceil((ht / maxHour) * 5));
-            var barH = ht === 0 ? 0 : Math.max(2, (ht / maxHour) * 20);
-            html += '<div class="mc-hour-bar h' + level + '" style="height:' + barH.toFixed(1) + 'px"></div>';
+            var barH = ht === 0 ? 0 : Math.max(2, (ht / maxHour) * 18);
+            hHtml += '<div class="mc-hour-bar h' + level + '" style="height:' + barH.toFixed(1) + 'px"></div>';
           }
-          hourArea.innerHTML = html;
+          hourArea.innerHTML = hHtml;
+        }
+
+        var allDayRanges = [];
+        for (var bi = 0; bi < md5s.length; bi++) {
+          var bk = books[md5s[bi]];
+          var ranges = getBookRanges(bk.days);
+          for (var ri = 0; ri < ranges.length; ri++) {
+            var s = Number(ranges[ri].start.split('-')[2]);
+            var e = Number(ranges[ri].end.split('-')[2]);
+            if (s <= d && e >= d) {
+              allDayRanges.push({ md5: md5s[bi], title: bk.title, startDay: s, endDay: e });
+            }
+          }
+        }
+
+        var dayOfWeek = (firstCol + d - 1) % 7;
+        allDayRanges.sort(function(a, b) { return (b.endDay - b.startDay) - (a.endDay - a.startDay); });
+
+        var localTracks = [];
+        for (var ri = 0; ri < allDayRanges.length; ri++) {
+          var rng = allDayRanges[ri];
+          var placed = false;
+          for (var ti = 0; ti < localTracks.length; ti++) {
+            var conflict = false;
+            for (var ci = 0; ci < localTracks[ti].length; ci++) {
+              var ex = localTracks[ti][ci];
+              if (rng.startDay <= ex.endDay && rng.endDay >= ex.startDay) {
+                conflict = true;
+                break;
+              }
+            }
+            if (!conflict) {
+              localTracks[ti].push(rng);
+              placed = true;
+              break;
+            }
+          }
+          if (!placed) localTracks.push([rng]);
+        }
+
+        var booksArea = document.getElementById('mcBooks-' + d);
+        if (booksArea) {
+          for (var ti = 0; ti < localTracks.length; ti++) {
+            for (var ci = 0; ci < localTracks[ti].length; ci++) {
+              var r = localTracks[ti][ci];
+              if (d === r.startDay) {
+                var color = getBookColor(r.md5);
+                var el = document.createElement('div');
+                el.className = 'mc-book-bar';
+                el.style.backgroundColor = color;
+
+                var spanCols = 0;
+                for (var sd = r.startDay; sd <= Math.min(r.endDay, daysInMonth); sd++) {
+                  var sp = firstCol + sd - 1;
+                  var sr = Math.floor(sp / 7) + 2;
+                  if (sr === dayRow) spanCols++;
+                  else break;
+                }
+
+                el.textContent = r.title;
+                el.title = r.title;
+                booksArea.appendChild(el);
+              }
+            }
+          }
         }
       }
     }
