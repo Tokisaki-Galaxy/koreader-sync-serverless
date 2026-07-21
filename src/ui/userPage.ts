@@ -390,18 +390,19 @@ export function renderUserPage(locale: Locale): string {
     .cal-toolbar label { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
     .cal-toolbar select { padding: 4px 8px; font-size: 13px; min-width: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); color: var(--text); }
     .cal-wrap { overflow-x: auto; padding: 4px 0 10px; }
+    .cal-chart { display: inline-block; }
     .cal-svg { display: block; }
     .cal-svg text { fill: var(--text-secondary); font-size: 10px; }
     .cal-cell { rx: 2; ry: 2; }
-    .cal-lv0 { fill: var(--cal-0); }
-    .cal-lv1 { fill: var(--cal-1); }
-    .cal-lv2 { fill: var(--cal-2); }
-    .cal-lv3 { fill: var(--cal-3); }
-    .cal-lv4 { fill: var(--cal-4); }
+    .cal-lv0 { fill: var(--cal-0); background: var(--cal-0); }
+    .cal-lv1 { fill: var(--cal-1); background: var(--cal-1); }
+    .cal-lv2 { fill: var(--cal-2); background: var(--cal-2); }
+    .cal-lv3 { fill: var(--cal-3); background: var(--cal-3); }
+    .cal-lv4 { fill: var(--cal-4); background: var(--cal-4); }
     .cal-outside { opacity: .3; }
     .cal-cell:hover { stroke: var(--text); stroke-width: 1; }
-    .cal-legend { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-secondary); margin-top: 8px; justify-content: flex-end; }
-    .cal-legend .swatch { width: 11px; height: 11px; border-radius: 2px; }
+    .cal-legend { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-secondary); margin-top: 8px; justify-content: flex-start; }
+    .cal-legend .swatch { display: inline-block; width: 11px; height: 11px; border-radius: 2px; }
     .cal-tooltip {
       position: fixed; pointer-events: none; z-index: 100;
       background: #1e293b; color: #fff; padding: 4px 8px; border-radius: 4px;
