@@ -43,6 +43,7 @@ const zh = {
         tabOverview: "总览",
         tabReadingStats: "阅读统计",
         tabSyncRecords: "进度同步",
+        tabCalendar: "阅读活动",
         sourceStats: "来源 /web/stats",
         sourceSync: "来源 /web/records",
         statsTitle: "个人统计",

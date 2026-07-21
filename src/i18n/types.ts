@@ -43,6 +43,7 @@ export interface UserMessages {
   tabOverview: string;
   tabReadingStats: string;
   tabSyncRecords: string;
+  tabCalendar: string;
   sourceStats: string;
   sourceSync: string;
   statsTitle: string;
