@@ -899,6 +899,8 @@ export function renderUserPage(locale: Locale): string {
       const data = await jsonFetch('/web/stats/calendar');
       renderCalendar(data.days || [], data.years || []);
     }
+
+    async function loadOverview() {
       const [me, stats] = await Promise.all([jsonFetch('/web/me'), jsonFetch('/web/stats')]);
       renderOverview(me, stats);
     }
