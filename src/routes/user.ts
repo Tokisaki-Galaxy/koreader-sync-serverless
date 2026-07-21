@@ -224,6 +224,67 @@ router.get("/web/stats/calendar", async (c) => {
   return c.json({ years, days });
 });
 
+router.get("/web/stats/calendar/detail", async (c) => {
+  const auth = await authWebUser(c);
+  if (!auth) return c.json({ error: "Unauthorized" }, 401);
+
+  const year = Number(c.req.query("year"));
+  const month = Number(c.req.query("month"));
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return c.json({ error: "Invalid year/month" }, 400);
+  }
+
+  const statistics = await getStatisticsSnapshot(c.get("db"), auth.userId);
+  const booksMap: Record<string, { title: string; authors: string; days: Record<string, Record<string, number>>; totalMinutes: number }> = {};
+  let totalMinutes = 0;
+
+  if (statistics) {
+    try {
+      const parsed = JSON.parse(statistics.snapshot_json) as Record<string, unknown>;
+      const books = Array.isArray(parsed.books) ? parsed.books : [];
+      for (const book of books) {
+        if (!book || typeof book !== "object") continue;
+        const b = book as Record<string, unknown>;
+        const md5Val = typeof b.md5 === "string" ? b.md5.trim() : "";
+        if (!md5Val) continue;
+        const title = typeof b.title === "string" ? b.title : "";
+        const authors = typeof b.authors === "string" ? b.authors : "";
+
+        const rawStats = b.page_stat_data;
+        const pageStats: unknown[] = Array.isArray(rawStats) ? rawStats : [];
+        let bookMinutes = 0;
+        const days: Record<string, Record<string, number>> = {};
+
+        for (const stat of pageStats) {
+          if (!stat || typeof stat !== "object") continue;
+          const rec = stat as Record<string, unknown>;
+          const startTime = Number(rec.start_time);
+          const duration = Number(rec.duration);
+          if (!Number.isFinite(startTime) || !Number.isFinite(duration) || duration <= 0) continue;
+
+          const d = new Date(startTime * 1000);
+          if (d.getFullYear() !== year || d.getMonth() + 1 !== month) continue;
+
+          const dateKey = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+          const hour = String(d.getHours());
+          const mins = Math.round(duration / 60);
+
+          if (!days[dateKey]) days[dateKey] = {};
+          days[dateKey][hour] = (days[dateKey][hour] || 0) + mins;
+          bookMinutes += mins;
+        }
+
+        if (bookMinutes > 0) {
+          booksMap[md5Val] = { title, authors, days, totalMinutes: bookMinutes };
+          totalMinutes += bookMinutes;
+        }
+      }
+    } catch {}
+  }
+
+  return c.json({ year, month, totalMinutes, books: booksMap });
+});
+
 router.get("/", (c) => {
   const locale = pickLocale(c.req.header("accept-language"));
   return c.html(renderUserPage(locale));
