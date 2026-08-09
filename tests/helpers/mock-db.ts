@@ -18,6 +18,7 @@ type StatisticsSnapshot = {
   device: string;
   device_id: string;
   snapshot_json: string;
+  statistics_summary_json: string | null;
   updated_at: number;
 };
 
@@ -264,7 +265,7 @@ class MockD1Database {
         .sort((a, b) => b.count - a.count);
     }
 
-    if (q.includes("select schema_version, device, device_id, snapshot_json from statistics_snapshot where user_id = ?")) {
+    if (q.includes("select schema_version, device, device_id, snapshot_json, statistics_summary_json from statistics_snapshot where user_id = ?")) {
       const userId = Number(bound[0]);
       const row = this.statistics.get(userId);
       if (!row) return null;
@@ -273,6 +274,7 @@ class MockD1Database {
         device: row.device,
         device_id: row.device_id,
         snapshot_json: row.snapshot_json,
+        statistics_summary_json: row.statistics_summary_json,
       };
     }
 
@@ -284,6 +286,7 @@ class MockD1Database {
         device: String(bound[2] ?? ""),
         device_id: String(bound[3] ?? ""),
         snapshot_json: String(bound[4] ?? ""),
+        statistics_summary_json: bound[5] == null ? null : String(bound[5]),
         updated_at: now,
       });
       return { meta: { changes: 1 } };
