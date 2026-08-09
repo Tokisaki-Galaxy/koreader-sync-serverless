@@ -427,6 +427,7 @@ export function renderUserPage(locale: Locale): string {
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
       overflow: hidden;
+      position: relative;
     }
     .mc-dow-row {
       display: contents;
@@ -487,6 +488,11 @@ export function renderUserPage(locale: Locale): string {
       flex-shrink: 0;
     }
     .mc-book-bar:hover { filter: brightness(1.15); }
+    .mc-book-bar.span {
+      position: absolute;
+      z-index: 1;
+      max-width: none;
+    }
     .mc-hour-area {
       height: 20px;
       display: flex;
@@ -1016,29 +1022,126 @@ export function renderUserPage(locale: Locale): string {
       return 'hsl(' + h + ', ' + s + '%, ' + l + '%)';
     }
 
-    function getBookRanges(days) {
-      var dateKeys = Object.keys(days).sort();
-      var ranges = [];
-      var i = 0;
-      while (i < dateKeys.length) {
-        var start = dateKeys[i];
-        var end = start;
-        var j = i + 1;
-        while (j < dateKeys.length) {
-          var next = new Date(end);
-          next.setDate(next.getDate() + 1);
-          var nextKey = next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0') + '-' + String(next.getDate()).padStart(2, '0');
-          if (dateKeys[j] === nextKey) {
-            end = dateKeys[j];
+    var MONTH_BAR_HEIGHT = 15;
+    var MONTH_BAR_GAP = 1;
+
+    function pad2(n) {
+      return String(n).padStart(2, '0');
+    }
+
+    function parseDateKey(key) {
+      var p = key.split('-');
+      return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    }
+
+    function formatDateKey(d) {
+      return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    }
+
+    function dayRowIndex(firstCol, day) {
+      return Math.floor((firstCol + day - 1) / 7);
+    }
+
+    function buildBookIntervals(books, firstCol, daysInMonth) {
+      var intervals = [];
+      var md5s = Object.keys(books);
+      for (var bi = 0; bi < md5s.length; bi++) {
+        var md5 = md5s[bi];
+        var bk = books[md5];
+        var dateKeys = Object.keys(bk.days).sort();
+        var i = 0;
+        while (i < dateKeys.length) {
+          var startKey = dateKeys[i];
+          var endKey = startKey;
+          var j = i + 1;
+          while (j < dateKeys.length) {
+            var cur = parseDateKey(endKey);
+            var next = new Date(cur);
+            next.setDate(next.getDate() + 1);
+            if (formatDateKey(next) !== dateKeys[j]) break;
+            if (next.getDay() === 1) break;
+            endKey = dateKeys[j];
             j++;
-          } else {
-            break;
+          }
+          var startDay = Number(startKey.split('-')[2]);
+          var endDay = Number(endKey.split('-')[2]);
+          if (startDay >= 1 && startDay <= daysInMonth && endDay >= 1 && endDay <= daysInMonth) {
+            intervals.push({
+              md5: md5,
+              title: bk.title,
+              startDay: startDay,
+              endDay: endDay,
+              row: dayRowIndex(firstCol, startDay),
+              minutes: bk.totalMinutes || 0,
+            });
+          }
+          i = j;
+        }
+      }
+      return intervals;
+    }
+
+    function assignLanes(intervals) {
+      var rows = {};
+      for (var i = 0; i < intervals.length; i++) {
+        var iv = intervals[i];
+        (rows[iv.row] = rows[iv.row] || []).push(iv);
+      }
+      var rowKeys = Object.keys(rows);
+      for (var ri = 0; ri < rowKeys.length; ri++) {
+        var list = rows[rowKeys[ri]];
+        list.sort(function(a, b) {
+          if (a.startDay !== b.startDay) return a.startDay - b.startDay;
+          var spanA = a.endDay - a.startDay;
+          var spanB = b.endDay - b.startDay;
+          if (spanA !== spanB) return spanB - spanA;
+          return (b.minutes || 0) - (a.minutes || 0);
+        });
+        var laneMaxEnds = [];
+        for (var k = 0; k < list.length; k++) {
+          var iv2 = list[k];
+          var placed = false;
+          for (var li = 0; li < laneMaxEnds.length; li++) {
+            if (iv2.startDay > laneMaxEnds[li]) {
+              iv2.lane = li;
+              laneMaxEnds[li] = Math.max(laneMaxEnds[li], iv2.endDay);
+              placed = true;
+              break;
+            }
+          }
+          if (!placed) {
+            iv2.lane = laneMaxEnds.length;
+            laneMaxEnds.push(iv2.endDay);
           }
         }
-        ranges.push({ start: start, end: end });
-        i = j;
       }
-      return ranges;
+      return intervals;
+    }
+
+    function renderMonthBars(grid, intervals) {
+      if (!intervals.length) return;
+      var gridRect = grid.getBoundingClientRect();
+      if (gridRect.width <= 0) return;
+      for (var i = 0; i < intervals.length; i++) {
+        var iv = intervals[i];
+        var startArea = document.getElementById('mcBooks-' + iv.startDay);
+        var endArea = document.getElementById('mcBooks-' + iv.endDay);
+        if (!startArea || !endArea) continue;
+        var startRect = startArea.getBoundingClientRect();
+        var endRect = endArea.getBoundingClientRect();
+        var barTop = startRect.top - gridRect.top + iv.lane * (MONTH_BAR_HEIGHT + MONTH_BAR_GAP);
+        if (barTop + MONTH_BAR_HEIGHT > startRect.bottom - gridRect.top - 2) continue;
+        var el = document.createElement('div');
+        el.className = 'mc-book-bar span';
+        el.style.left = (startRect.left - gridRect.left).toFixed(1) + 'px';
+        el.style.top = barTop.toFixed(1) + 'px';
+        el.style.width = (endRect.right - startRect.left).toFixed(1) + 'px';
+        el.style.height = MONTH_BAR_HEIGHT + 'px';
+        el.style.backgroundColor = getBookColor(iv.md5);
+        el.textContent = iv.title;
+        el.title = iv.title;
+        grid.appendChild(el);
+      }
     }
 
     function renderMonthCalendar(data, year, month) {
@@ -1129,70 +1232,21 @@ export function renderUserPage(locale: Locale): string {
           }
           hourArea.innerHTML = hHtml;
         }
-
-        var allDayRanges = [];
-        for (var bi = 0; bi < md5s.length; bi++) {
-          var bk = books[md5s[bi]];
-          var ranges = getBookRanges(bk.days);
-          for (var ri = 0; ri < ranges.length; ri++) {
-            var s = Number(ranges[ri].start.split('-')[2]);
-            var e = Number(ranges[ri].end.split('-')[2]);
-            if (s <= d && e >= d) {
-              allDayRanges.push({ md5: md5s[bi], title: bk.title, startDay: s, endDay: e });
-            }
-          }
-        }
-
-        var dayOfWeek = (firstCol + d - 1) % 7;
-        allDayRanges.sort(function(a, b) { return (b.endDay - b.startDay) - (a.endDay - a.startDay); });
-
-        var localTracks = [];
-        for (var ri = 0; ri < allDayRanges.length; ri++) {
-          var rng = allDayRanges[ri];
-          var placed = false;
-          for (var ti = 0; ti < localTracks.length; ti++) {
-            var conflict = false;
-            for (var ci = 0; ci < localTracks[ti].length; ci++) {
-              var ex = localTracks[ti][ci];
-              if (rng.startDay <= ex.endDay && rng.endDay >= ex.startDay) {
-                conflict = true;
-                break;
-              }
-            }
-            if (!conflict) {
-              localTracks[ti].push(rng);
-              placed = true;
-              break;
-            }
-          }
-          if (!placed) localTracks.push([rng]);
-        }
-
-        var booksArea = document.getElementById('mcBooks-' + d);
-        if (booksArea) {
-          for (var ti = 0; ti < localTracks.length; ti++) {
-            for (var ci = 0; ci < localTracks[ti].length; ci++) {
-              var r = localTracks[ti][ci];
-              var color = getBookColor(r.md5);
-              var el = document.createElement('div');
-              el.className = 'mc-book-bar';
-              el.style.backgroundColor = color;
-              el.textContent = r.title;
-              el.title = r.title;
-              booksArea.appendChild(el);
-            }
-          }
-        }
       }
+
+      renderMonthBars(grid, assignLanes(buildBookIntervals(books, firstCol, daysInMonth)));
     }
 
     var mcYear = new Date().getFullYear();
     var mcMonth = new Date().getMonth() + 1;
+    var lastMonthData = null;
+    var monthResizeTimer = null;
 
     function loadMonthCalendar(year, month) {
       mcYear = year;
       mcMonth = month;
       jsonFetch('/web/stats/calendar/detail?year=' + year + '&month=' + month).then(function(data) {
+        lastMonthData = { data: data, year: year, month: month };
         renderMonthCalendar(data, year, month);
       }).catch(function() {});
     }
@@ -1326,6 +1380,14 @@ export function renderUserPage(locale: Locale): string {
         case 'month-next': if (++m === 13) { m = 1; y++; } break;
       }
       loadMonthCalendar(y, m);
+    });
+
+    window.addEventListener('resize', function() {
+      if (currentTab !== 'calendar' || !lastMonthData) return;
+      clearTimeout(monthResizeTimer);
+      monthResizeTimer = setTimeout(function() {
+        renderMonthCalendar(lastMonthData.data, lastMonthData.year, lastMonthData.month);
+      }, 150);
     });
 
     document.getElementById('loadRecordsBtn').addEventListener('click', async () => {
