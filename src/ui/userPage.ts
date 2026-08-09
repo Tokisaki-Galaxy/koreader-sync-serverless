@@ -575,8 +575,8 @@ export function renderUserPage(locale: Locale): string {
       <div class="tabs" id="tabs">
         <button class="tab-btn active" data-tab="overview">${m.tabOverview}</button>
         <button class="tab-btn" data-tab="reading">${m.tabReadingStats}</button>
-        <button class="tab-btn" data-tab="sync">${m.tabSyncRecords}</button>
         <button class="tab-btn" data-tab="calendar">${m.tabCalendar}</button>
+        <button class="tab-btn" data-tab="sync">${m.tabSyncRecords}</button>
       </div>
 
       <section class="tab-panel active" id="tab-overview">
@@ -1374,8 +1374,8 @@ export function renderUserPage(locale: Locale): string {
       var action = btn.getAttribute('data-mc');
       var y = mcYear, m = mcMonth;
       switch (action) {
-        case 'year-prev': y--; break;
-        case 'year-next': y++; break;
+        case 'year-prev': m -= 3; if (m <= 0) { m += 12; y--; } break;
+        case 'year-next': m += 3; if (m > 12) { m -= 12; y++; } break;
         case 'month-prev': if (--m === 0) { m = 12; y--; } break;
         case 'month-next': if (++m === 13) { m = 1; y++; } break;
       }

@@ -203,14 +203,26 @@ export async function getLatestProgressByDocument(
 export async function getStatisticsSnapshot(
   db: DatabaseAdapter,
   userId: number
-): Promise<{ schema_version: number; device: string; device_id: string; snapshot_json: string } | null> {
+): Promise<{
+  schema_version: number;
+  device: string;
+  device_id: string;
+  snapshot_json: string;
+  statistics_summary_json: string | null;
+} | null> {
   const row = await db.prepare(
-    `SELECT schema_version, device, device_id, snapshot_json
+    `SELECT schema_version, device, device_id, snapshot_json, statistics_summary_json
      FROM statistics_snapshot
      WHERE user_id = ?`
   )
     .bind(userId)
-    .first<{ schema_version: number; device: string; device_id: string; snapshot_json: string }>();
+    .first<{
+      schema_version: number;
+      device: string;
+      device_id: string;
+      snapshot_json: string;
+      statistics_summary_json: string | null;
+    }>();
   return row ?? null;
 }
 
@@ -220,20 +232,22 @@ export async function upsertStatisticsSnapshot(
   schemaVersion: number,
   device: string,
   deviceId: string,
-  snapshotJson: string
+  snapshotJson: string,
+  summaryJson: string | null
 ): Promise<void> {
   await db.prepare(
     `INSERT INTO statistics_snapshot (
-      user_id, schema_version, device, device_id, snapshot_json, updated_at
-    ) VALUES (?, ?, ?, ?, ?, unixepoch())
+      user_id, schema_version, device, device_id, snapshot_json, statistics_summary_json, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, unixepoch())
     ON CONFLICT(user_id) DO UPDATE SET
       schema_version = excluded.schema_version,
       device = excluded.device,
       device_id = excluded.device_id,
       snapshot_json = excluded.snapshot_json,
+      statistics_summary_json = excluded.statistics_summary_json,
       updated_at = unixepoch()`
   )
-    .bind(userId, schemaVersion, device, deviceId, snapshotJson)
+    .bind(userId, schemaVersion, device, deviceId, snapshotJson, summaryJson)
     .run();
 }
 

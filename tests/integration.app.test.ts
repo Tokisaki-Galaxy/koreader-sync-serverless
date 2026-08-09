@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import app from "../src/index";
 import { hashPassword, sha256 } from "../src/crypto";
 import { parsePbkdf2Iterations } from "../src/services/common";
+import { getStatisticsSnapshot, upsertStatisticsSnapshot } from "../src/db";
 import { createMockEnv } from "./helpers/mock-db";
 import { getCookieHeaderFromResponse } from "./helpers/http";
 
@@ -262,5 +263,198 @@ describe("worker integration", () => {
     );
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ mode: "token" });
+  });
+
+  it("serves calendar aggregates from the statistics summary", async () => {
+    const env = createMockEnv();
+    const md5Password = "5f4dcc3b5aa765d61d8327deb882cf99";
+    const register = await app.request(
+      "/users/create",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "caluser", password: "password" }),
+      },
+      env
+    );
+    expect(register.status).toBe(201);
+
+    const base = new Date(2024, 0, 5, 10, 30, 0);
+    const t1 = Math.floor(base.getTime() / 1000);
+    const t2 = t1 + 3600;
+
+    const statsHeaders = {
+      "x-auth-user": "caluser",
+      "x-auth-key": md5Password,
+      "content-type": "application/json",
+      "x-client-version": "y-anna-1.0",
+      "User-Agent": "Mozilla/DONTLIKE/ANYTHING",
+    };
+    const putRes = await app.request(
+      "/syncs/statistics",
+      {
+        method: "PUT",
+        headers: statsHeaders,
+        body: JSON.stringify({
+          schema_version: 20221111,
+          device: "Kindle",
+          device_id: "k-1",
+          snapshot: {
+            books: [
+              {
+                md5: "abc",
+                title: "A",
+                authors: "X",
+                notes: 1,
+                last_open: t1,
+                highlights: 2,
+                pages: 100,
+                series: "",
+                language: "en",
+                total_read_time: 10,
+                total_read_pages: 5,
+                page_stat_data: [
+                  { page: 1, start_time: t1, duration: 61, total_pages: 100 },
+                  { page: 2, start_time: t1 + 90, duration: 59, total_pages: 100 },
+                  { page: 3, start_time: t2, duration: 120, total_pages: 100 },
+                ],
+              },
+              {
+                md5: "def",
+                title: "B",
+                authors: "Y",
+                notes: 0,
+                last_open: 0,
+                highlights: 0,
+                pages: 200,
+                series: "",
+                language: "en",
+                total_read_time: 5,
+                total_read_pages: 2,
+                page_stat_data: [{ page: 1, start_time: t2, duration: 30, total_pages: 200 }],
+              },
+            ],
+          },
+        }),
+      },
+      env
+    );
+    expect(putRes.status).toBe(200);
+
+    const loginRes = await app.request(
+      "/web/auth/login",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "caluser", password: "password" }),
+      },
+      env
+    );
+    const cookie = getCookieHeaderFromResponse(loginRes, "ks_session");
+
+    const statsRes = await app.request("/web/stats", { headers: { cookie } }, env);
+    expect(statsRes.status).toBe(200);
+    const statsData = await statsRes.json();
+    expect(statsData.readingStatistics).toMatchObject({ totalBooks: 2, totalReadTime: 15, totalReadPages: 7 });
+
+    const calRes = await app.request("/web/stats/calendar", { headers: { cookie } }, env);
+    expect(calRes.status).toBe(200);
+    const calData = await calRes.json();
+    expect(calData.years).toEqual([2024]);
+    expect(calData.days).toEqual([{ date: "2024-01-05", minutes: 5 }]);
+
+    const detailRes = await app.request("/web/stats/calendar/detail?year=2024&month=1", { headers: { cookie } }, env);
+    expect(detailRes.status).toBe(200);
+    const detailData = await detailRes.json();
+    expect(detailData.totalMinutes).toBe(5);
+    expect(detailData.books.abc).toMatchObject({ title: "A", authors: "X", totalMinutes: 4 });
+    expect(detailData.books.abc.days["2024-01-05"]["10"]).toBe(2);
+    expect(detailData.books.abc.days["2024-01-05"]["11"]).toBe(2);
+    expect(detailData.books.def).toMatchObject({ title: "B", authors: "Y", totalMinutes: 1 });
+
+    const detailOther = await app.request("/web/stats/calendar/detail?year=2024&month=2", { headers: { cookie } }, env);
+    expect(detailOther.status).toBe(200);
+    await expect(detailOther.json()).resolves.toMatchObject({ totalMinutes: 0, books: {} });
+  });
+
+  it("lazy-backfills the statistics summary for legacy rows", async () => {
+    const env = createMockEnv();
+    const md5Password = "5f4dcc3b5aa765d61d8327deb882cf99";
+    const register = await app.request(
+      "/users/create",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "legacy", password: "password" }),
+      },
+      env
+    );
+    expect(register.status).toBe(201);
+
+    const loginRes = await app.request(
+      "/web/auth/login",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "legacy", password: "password" }),
+      },
+      env
+    );
+    const cookie = getCookieHeaderFromResponse(loginRes, "ks_session");
+
+    const meRes = await app.request("/web/me", { headers: { cookie } }, env);
+    const me = await meRes.json();
+    const userId = me.id;
+
+    const base = new Date(2024, 0, 5, 10, 30, 0);
+    const t1 = Math.floor(base.getTime() / 1000);
+    const legacySnapshot = {
+      books: [
+        {
+          md5: "legacy",
+          title: "Legacy Book",
+          authors: "",
+          notes: 0,
+          last_open: t1,
+          highlights: 0,
+          pages: 100,
+          series: "",
+          language: "en",
+          total_read_time: 30,
+          total_read_pages: 10,
+          page_stat_data: [{ page: 1, start_time: t1, duration: 120, total_pages: 100 }],
+        },
+      ],
+    };
+    await upsertStatisticsSnapshot(
+      env.DB,
+      userId,
+      20221111,
+      "Kindle",
+      "k-1",
+      JSON.stringify(legacySnapshot),
+      null
+    );
+
+    const statsRes = await app.request("/web/stats", { headers: { cookie } }, env);
+    expect(statsRes.status).toBe(200);
+    const statsData = await statsRes.json();
+    expect(statsData.readingStatistics).toMatchObject({
+      totalBooks: 1,
+      totalReadTime: 30,
+      totalReadPages: 10,
+      lastOpenAt: t1,
+    });
+
+    const calRes = await app.request("/web/stats/calendar", { headers: { cookie } }, env);
+    expect(calRes.status).toBe(200);
+    await expect(calRes.json()).resolves.toMatchObject({
+      years: [2024],
+      days: [{ date: "2024-01-05", minutes: 2 }],
+    });
+
+    const stored = await getStatisticsSnapshot(env.DB, userId);
+    expect(stored?.statistics_summary_json).not.toBeNull();
+    expect(JSON.parse(stored?.statistics_summary_json ?? "{}").version).toBe(1);
   });
 });

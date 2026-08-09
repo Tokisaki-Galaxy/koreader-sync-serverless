@@ -5,7 +5,6 @@ import {
   deleteSessionByTokenHash,
   findUserByUsername,
   getProgressSummaryByUser,
-  getStatisticsSnapshot,
   listDeviceUsageByUser,
   listProgressRecordsByUser,
 } from "../db";
@@ -14,49 +13,12 @@ import { generateSessionToken, sha256, verifyPassword } from "../crypto";
 import { pickLocale } from "../i18n";
 import { authWebUser, USER_SESSION_COOKIE } from "../services/auth";
 import { badRequest, parsePbkdf2Iterations, parseSessionTtlHours } from "../services/common";
+import { getStatisticsWithSummary } from "../services/statistics";
 import { renderUserPage } from "../ui/userPage";
-import type { StatisticsBookRow, StatisticsSnapshot, UserLoginRequest } from "../types";
+import type { UserLoginRequest } from "../types";
 import type { AppEnv } from "../context";
 
 const router = new Hono<AppEnv>();
-
-function numberOrZero(value: unknown): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function parseStatisticsSnapshot(snapshotJson: string): StatisticsSnapshot | null {
-  try {
-    const parsed = JSON.parse(snapshotJson) as unknown;
-    if (!parsed || typeof parsed !== "object") return null;
-    const booksRaw = (parsed as Record<string, unknown>).books;
-    if (!Array.isArray(booksRaw)) return { books: [] };
-    const books: StatisticsBookRow[] = [];
-    for (const item of booksRaw) {
-      if (!item || typeof item !== "object") continue;
-      const row = item as Record<string, unknown>;
-      const md5Value = typeof row.md5 === "string" ? row.md5.trim() : "";
-      if (!md5Value) continue;
-      books.push({
-        md5: md5Value,
-        title: typeof row.title === "string" ? row.title : "",
-        authors: typeof row.authors === "string" ? row.authors : "",
-        notes: numberOrZero(row.notes),
-        last_open: numberOrZero(row.last_open),
-        highlights: numberOrZero(row.highlights),
-        pages: numberOrZero(row.pages),
-        series: typeof row.series === "string" ? row.series : "",
-        language: typeof row.language === "string" ? row.language : "",
-        total_read_time: numberOrZero(row.total_read_time),
-        total_read_pages: numberOrZero(row.total_read_pages),
-        page_stat_data: [],
-      });
-    }
-    return { books };
-  } catch {
-    return null;
-  }
-}
 
 router.post("/web/auth/login", async (c) => {
   let body: UserLoginRequest;
@@ -131,9 +93,8 @@ router.get("/web/stats", async (c) => {
 
   const devices = await listDeviceUsageByUser(c.get("db"), auth.userId);
 
-  const statistics = await getStatisticsSnapshot(c.get("db"), auth.userId);
-  const snapshot = statistics ? parseStatisticsSnapshot(statistics.snapshot_json) : null;
-  const books = snapshot?.books ?? [];
+  const withSummary = await getStatisticsWithSummary(c.get("db"), auth.userId);
+  const books = withSummary?.summary ? Object.values(withSummary.summary.books) : [];
   const totalReadTime = books.reduce((sum, item) => sum + Number(item.total_read_time || 0), 0);
   const totalReadPages = books.reduce((sum, item) => sum + Number(item.total_read_pages || 0), 0);
   const statisticsLastOpen = books.reduce((max, item) => Math.max(max, Number(item.last_open || 0)), 0);
@@ -164,17 +125,18 @@ router.get("/web/statistics/books", async (c) => {
   const pageSize = c.req.query("pageSize") === "100" ? 100 : 50;
   const offset = (page - 1) * pageSize;
 
-  const statistics = await getStatisticsSnapshot(c.get("db"), auth.userId);
-  if (!statistics) return c.json({ schemaVersion: null, page, pageSize, total: 0, items: [] });
-  const snapshot = parseStatisticsSnapshot(statistics.snapshot_json);
-  const books = (snapshot?.books ?? []).sort(
+  const withSummary = await getStatisticsWithSummary(c.get("db"), auth.userId);
+  if (!withSummary || !withSummary.summary) {
+    return c.json({ schemaVersion: null, page, pageSize, total: 0, items: [] });
+  }
+  const books = Object.values(withSummary.summary.books).sort(
     (a, b) => Number(b.total_read_time || 0) - Number(a.total_read_time || 0)
   );
   const pagedBooks = books.slice(offset, offset + pageSize);
   return c.json({
-    schemaVersion: statistics.schema_version,
-    device: statistics.device,
-    deviceId: statistics.device_id,
+    schemaVersion: withSummary.schema_version,
+    device: withSummary.device,
+    deviceId: withSummary.device_id,
     page,
     pageSize,
     total: books.length,
@@ -186,32 +148,10 @@ router.get("/web/stats/calendar", async (c) => {
   const auth = await authWebUser(c);
   if (!auth) return c.json({ error: "Unauthorized" }, 401);
 
-  const statistics = await getStatisticsSnapshot(c.get("db"), auth.userId);
-  const dailyMinutes: Record<string, number> = {};
+  const withSummary = await getStatisticsWithSummary(c.get("db"), auth.userId);
+  const daily = withSummary?.summary?.daily ?? {};
 
-  if (statistics) {
-    try {
-      const parsed = JSON.parse(statistics.snapshot_json) as Record<string, unknown>;
-      const books = Array.isArray(parsed.books) ? parsed.books : [];
-      for (const book of books) {
-        if (!book || typeof book !== "object") continue;
-        const rawStats = (book as Record<string, unknown>).page_stat_data;
-        const pageStats: unknown[] = Array.isArray(rawStats) ? rawStats : [];
-        for (const stat of pageStats) {
-          if (!stat || typeof stat !== "object") continue;
-          const rec = stat as Record<string, unknown>;
-          const startTime = Number(rec.start_time);
-          const duration = Number(rec.duration);
-          if (!Number.isFinite(startTime) || !Number.isFinite(duration) || duration <= 0) continue;
-          const date = new Date(startTime * 1000);
-          const key = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
-          dailyMinutes[key] = (dailyMinutes[key] || 0) + Math.round(duration / 60);
-        }
-      }
-    } catch {}
-  }
-
-  const days = Object.entries(dailyMinutes)
+  const days = Object.entries(daily)
     .map(([date, minutes]) => ({ date, minutes }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
@@ -234,52 +174,27 @@ router.get("/web/stats/calendar/detail", async (c) => {
     return c.json({ error: "Invalid year/month" }, 400);
   }
 
-  const statistics = await getStatisticsSnapshot(c.get("db"), auth.userId);
+  const withSummary = await getStatisticsWithSummary(c.get("db"), auth.userId);
   const booksMap: Record<string, { title: string; authors: string; days: Record<string, Record<string, number>>; totalMinutes: number }> = {};
   let totalMinutes = 0;
 
-  if (statistics) {
-    try {
-      const parsed = JSON.parse(statistics.snapshot_json) as Record<string, unknown>;
-      const books = Array.isArray(parsed.books) ? parsed.books : [];
-      for (const book of books) {
-        if (!book || typeof book !== "object") continue;
-        const b = book as Record<string, unknown>;
-        const md5Val = typeof b.md5 === "string" ? b.md5.trim() : "";
-        if (!md5Val) continue;
-        const title = typeof b.title === "string" ? b.title : "";
-        const authors = typeof b.authors === "string" ? b.authors : "";
-
-        const rawStats = b.page_stat_data;
-        const pageStats: unknown[] = Array.isArray(rawStats) ? rawStats : [];
-        let bookMinutes = 0;
-        const days: Record<string, Record<string, number>> = {};
-
-        for (const stat of pageStats) {
-          if (!stat || typeof stat !== "object") continue;
-          const rec = stat as Record<string, unknown>;
-          const startTime = Number(rec.start_time);
-          const duration = Number(rec.duration);
-          if (!Number.isFinite(startTime) || !Number.isFinite(duration) || duration <= 0) continue;
-
-          const d = new Date(startTime * 1000);
-          if (d.getFullYear() !== year || d.getMonth() + 1 !== month) continue;
-
-          const dateKey = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-          const hour = String(d.getHours());
-          const mins = Math.round(duration / 60);
-
-          if (!days[dateKey]) days[dateKey] = {};
-          days[dateKey][hour] = (days[dateKey][hour] || 0) + mins;
-          bookMinutes += mins;
-        }
-
-        if (bookMinutes > 0) {
-          booksMap[md5Val] = { title, authors, days, totalMinutes: bookMinutes };
-          totalMinutes += bookMinutes;
+  if (withSummary?.summary) {
+    const monthPrefix = year + '-' + String(month).padStart(2, '0') + '-';
+    for (const book of Object.values(withSummary.summary.books)) {
+      const days: Record<string, Record<string, number>> = {};
+      let bookMinutes = 0;
+      for (const [dateKey, hours] of Object.entries(book.days)) {
+        if (!dateKey.startsWith(monthPrefix)) continue;
+        days[dateKey] = hours;
+        for (const hourKey of Object.keys(hours)) {
+          bookMinutes += hours[hourKey];
         }
       }
-    } catch {}
+      if (bookMinutes > 0) {
+        booksMap[book.md5] = { title: book.title, authors: book.authors, days, totalMinutes: bookMinutes };
+        totalMinutes += bookMinutes;
+      }
+    }
   }
 
   return c.json({ year, month, totalMinutes, books: booksMap });

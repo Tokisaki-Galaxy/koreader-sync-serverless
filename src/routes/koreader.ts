@@ -10,6 +10,7 @@ import { md5 } from "js-md5";
 import { hashPassword } from "../crypto";
 import { authKoreader, isValidField, isValidKeyField } from "../services/auth";
 import { badRequest, parsePbkdf2Iterations } from "../services/common";
+import { buildStatisticsSummary, normalizeBook, parseSnapshotFromJson } from "../services/statistics";
 import type {
   Env,
   ProgressUpdateRequest,
@@ -41,63 +42,6 @@ function isRegistrationEnabled(env: Env): boolean {
   const flag = env.ENABLE_USER_REGISTRATION;
   if (flag === undefined) return true;
   return flag === "true" || flag === "1";
-}
-
-function normalizePageStatData(value: unknown): StatisticsPageStatRow[] {
-  if (!Array.isArray(value)) return [];
-  const rows: StatisticsPageStatRow[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object") continue;
-    const record = item as Record<string, unknown>;
-    const { page, start_time, duration, total_pages, ...rest } = record;
-    const normalizedPage = page == null ? null : Number(page);
-    const normalizedStartTime = Number(start_time);
-    const normalizedDuration = Number(duration);
-    const normalizedTotalPages = Number(total_pages);
-    if (
-      !Number.isFinite(normalizedStartTime) ||
-      !Number.isFinite(normalizedDuration) ||
-      !Number.isFinite(normalizedTotalPages)
-    ) {
-      continue;
-    }
-    rows.push({
-      ...rest,
-      page: normalizedPage == null || !Number.isFinite(normalizedPage) ? null : normalizedPage,
-      start_time: normalizedStartTime,
-      duration: normalizedDuration,
-      total_pages: normalizedTotalPages,
-    });
-  }
-  return rows;
-}
-
-function numberOrZero(value: unknown): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function normalizeBook(value: unknown): StatisticsBookRow | null {
-  if (!value || typeof value !== "object") return null;
-  const row = value as Record<string, unknown>;
-  const { md5, page_stat_data, ...rest } = row;
-  const md5Value = typeof md5 === "string" ? md5.trim() : "";
-  if (!md5Value) return null;
-  return {
-    ...rest,
-    md5: md5Value,
-    title: typeof row.title === "string" ? row.title : "",
-    authors: typeof row.authors === "string" ? row.authors : "",
-    notes: numberOrZero(row.notes),
-    last_open: numberOrZero(row.last_open),
-    highlights: numberOrZero(row.highlights),
-    pages: numberOrZero(row.pages),
-    series: typeof row.series === "string" ? row.series : "",
-    language: typeof row.language === "string" ? row.language : "",
-    total_read_time: numberOrZero(row.total_read_time),
-    total_read_pages: numberOrZero(row.total_read_pages),
-    page_stat_data: normalizePageStatData(page_stat_data),
-  };
 }
 
 function dedupePageStats(rows: StatisticsPageStatRow[]): StatisticsPageStatRow[] {
@@ -196,19 +140,6 @@ function mergeSnapshots(existing: StatisticsSnapshot | null, incoming: Statistic
   return {
     books: Array.from(merged.values()).sort((a, b) => a.md5.localeCompare(b.md5)),
   };
-}
-
-function parseSnapshotFromJson(value: string): StatisticsSnapshot | null {
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!parsed || typeof parsed !== "object") return null;
-    const booksRaw = (parsed as Record<string, unknown>).books;
-    const books: unknown[] = Array.isArray(booksRaw) ? booksRaw : [];
-    const normalizedBooks = books.map(normalizeBook).filter((row): row is StatisticsBookRow => row !== null);
-    return { books: normalizedBooks };
-  } catch {
-    return null;
-  }
 }
 
 router.post("/users/create", async (c) => {
@@ -388,6 +319,7 @@ router.put("/syncs/statistics", async (c) => {
     const existing = await getStatisticsSnapshot(c.get("db"), auth.userId);
     const existingSnapshot = existing ? parseSnapshotFromJson(existing.snapshot_json) : null;
     const mergedSnapshot = mergeSnapshots(existingSnapshot, incomingSnapshot);
+    const summary = buildStatisticsSummary(mergedSnapshot);
 
     await upsertStatisticsSnapshot(
       c.get("db"),
@@ -395,7 +327,8 @@ router.put("/syncs/statistics", async (c) => {
       schemaVersion,
       device,
       deviceId,
-      JSON.stringify(mergedSnapshot)
+      JSON.stringify(mergedSnapshot),
+      JSON.stringify(summary)
     );
 
     return c.json({
