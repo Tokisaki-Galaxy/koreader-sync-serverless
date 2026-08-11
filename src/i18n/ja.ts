@@ -93,6 +93,22 @@ const ja: LocaleMessages = {
     dateFormatLocale: "ロケール",
     dateFormatShort: "DD.MM.YYYY, HH:mm",
     dateFormatIso: "ISO 8601",
+
+    exportTitle: "データのエクスポート / インポート",
+    exportDescription: "データを SQLite データベースとしてダウンロードするか、以前エクスポートしたファイルから復元します。読書統計は公式 KOReader statistics.sqlite3 形式、進捗は独自 progress.db 形式です。",
+    exportStatisticsButton: "statistics.sqlite3 をエクスポート",
+    exportProgressButton: "progress.db をエクスポート",
+    importTitle: "ファイルから復元",
+    importFileLabel: ".sqlite3/.db ファイルを選択",
+    importButton: "インポート",
+    importSuccessProgressPrefix: "進捗 ",
+    importSuccessProgressSuffix: " 件をインポートしました。",
+    importSuccessStatisticsPrefix: "読書統計（",
+    importSuccessStatisticsSuffix: " 冊）をインポートしました。",
+    importEmpty: "インポートするデータがありません。",
+    importBusy: "インポート中…",
+    exportBusy: "ダウンロードを準備中…",
+    unsupportedFile: "サポートされていないファイル：認識できるテーブルが見つかりません。",
   },
 };
 

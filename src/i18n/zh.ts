@@ -93,6 +93,22 @@ const zh: LocaleMessages = {
     dateFormatLocale: "语言环境",
     dateFormatShort: "DD.MM.YYYY, HH:mm",
     dateFormatIso: "ISO 8601",
+
+    exportTitle: "导出 / 导入数据",
+    exportDescription: "将你的数据下载为 SQLite 数据库文件，或从之前导出的文件恢复。阅读统计使用官方 KOReader statistics.sqlite3 格式；进度使用自定义 progress.db。",
+    exportStatisticsButton: "导出 statistics.sqlite3",
+    exportProgressButton: "导出 progress.db",
+    importTitle: "从文件恢复",
+    importFileLabel: "选择 .sqlite3/.db 文件",
+    importButton: "导入",
+    importSuccessProgressPrefix: "已导入 ",
+    importSuccessProgressSuffix: " 条进度记录。",
+    importSuccessStatisticsPrefix: "已导入阅读统计（",
+    importSuccessStatisticsSuffix: " 本书）。",
+    importEmpty: "没有可导入的数据。",
+    importBusy: "正在导入…",
+    exportBusy: "正在准备下载…",
+    unsupportedFile: "不支持的文件：未找到可识别的数据表。",
   },
 };
 
