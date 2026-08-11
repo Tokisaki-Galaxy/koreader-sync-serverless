@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import app from "../src/index";
 import { hashPassword, sha256 } from "../src/crypto";
 import { parsePbkdf2Iterations } from "../src/services/common";
-import { getStatisticsSnapshot, upsertStatisticsSnapshot } from "../src/db";
+import { getStatisticsSnapshot, listAllProgressByUser, upsertStatisticsSnapshot } from "../src/db";
 import { createMockEnv } from "./helpers/mock-db";
 import { getCookieHeaderFromResponse } from "./helpers/http";
 
@@ -456,5 +456,244 @@ describe("worker integration", () => {
     const stored = await getStatisticsSnapshot(env.DB, userId);
     expect(stored?.statistics_summary_json).not.toBeNull();
     expect(JSON.parse(stored?.statistics_summary_json ?? "{}").version).toBe(1);
+  });
+
+  describe("user data export/import", () => {
+    async function loginAndSeed(env: ReturnType<typeof createMockEnv>) {
+      const md5Password = "5f4dcc3b5aa765d61d8327deb882cf99";
+      const register = await app.request(
+        "/users/create",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ username: "backupuser", password: "password" }),
+        },
+        env
+      );
+      expect(register.status).toBe(201);
+
+      const authHeaders = {
+        "x-auth-user": "backupuser",
+        "x-auth-key": md5Password,
+        "content-type": "application/json",
+      };
+      const putRes = await app.request(
+        "/syncs/progress",
+        {
+          method: "PUT",
+          headers: authHeaders,
+          body: JSON.stringify({
+            document: "book-1",
+            progress: "page:10",
+            percentage: 23.5,
+            device: "kobo",
+            device_id: "device-a",
+          }),
+        },
+        env
+      );
+      expect(putRes.status).toBe(200);
+
+      const statsHeaders = {
+        ...authHeaders,
+        "x-client-version": "y-anna-1.0",
+        "User-Agent": "Mozilla/DONTLIKE/ANYTHING",
+      };
+      const statsRes = await app.request(
+        "/syncs/statistics",
+        {
+          method: "PUT",
+          headers: statsHeaders,
+          body: JSON.stringify({
+            schema_version: 20221111,
+            device: "Kindle",
+            device_id: "k-1",
+            snapshot: {
+              books: [
+                {
+                  md5: "abc",
+                  title: "A",
+                  authors: "X",
+                  notes: 1,
+                  last_open: 100,
+                  highlights: 2,
+                  pages: 100,
+                  series: "",
+                  language: "en",
+                  total_read_time: 10,
+                  total_read_pages: 5,
+                  page_stat_data: [{ page: 1, start_time: 1, duration: 10, total_pages: 100 }],
+                },
+              ],
+            },
+          }),
+        },
+        env
+      );
+      expect(statsRes.status).toBe(200);
+
+      const loginRes = await app.request(
+        "/web/auth/login",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ username: "backupuser", password: "password" }),
+        },
+        env
+      );
+      expect(loginRes.status).toBe(200);
+      return getCookieHeaderFromResponse(loginRes, "ks_session");
+    }
+
+    it("serves db-format schema payload", async () => {
+      const env = createMockEnv();
+      const res = await app.request("/web/export/db-format", { method: "GET" }, env);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.statisticsSchemaSql).toContain("CREATE TABLE");
+      expect(data.progressSchemaSql).toContain("CREATE TABLE");
+    });
+
+    it("requires auth for export/import", async () => {
+      const env = createMockEnv();
+      const exportRes = await app.request("/web/export/data", { method: "GET" }, env);
+      expect(exportRes.status).toBe(401);
+      const importRes = await app.request(
+        "/web/import",
+        { method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
+        env
+      );
+      expect(importRes.status).toBe(401);
+    });
+
+    it("exports full user data", async () => {
+      const env = createMockEnv();
+      const cookie = await loginAndSeed(env);
+
+      const res = await app.request("/web/export/data", { method: "GET", headers: { cookie } }, env);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.username).toBe("backupuser");
+      expect(data.progress).toHaveLength(1);
+      expect(data.progress[0]).toMatchObject({ document: "book-1", percentage: 23.5 });
+      expect(data.statistics).toMatchObject({ schema_version: 20221111, device: "Kindle" });
+      expect(data.statistics.snapshot.books).toHaveLength(1);
+      expect(data.statistics.snapshot.books[0].page_stat_data).toHaveLength(1);
+    });
+
+    it("imports progress records", async () => {
+      const env = createMockEnv();
+      const cookie = await loginAndSeed(env);
+
+      const res = await app.request(
+        "/web/import",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({
+            progress: [
+              {
+                document: "imported-doc",
+                progress: "page:5",
+                percentage: 42,
+                device: "pc",
+                device_id: "pc-1",
+                timestamp: 999,
+                updated_at: 999,
+              },
+            ],
+          }),
+        },
+        env
+      );
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toMatchObject({ status: "ok", progress: 1 });
+
+      const meRes = await app.request("/web/me", { headers: { cookie } }, env);
+      const me = await meRes.json();
+      const progress = await listAllProgressByUser(env.DB, me.id);
+      expect(progress.find((p) => p.document === "imported-doc")).toMatchObject({ percentage: 42, device: "pc" });
+    });
+
+    it("imports statistics snapshot by merging with existing", async () => {
+      const env = createMockEnv();
+      const cookie = await loginAndSeed(env);
+
+      const res = await app.request(
+        "/web/import",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({
+            statistics: {
+              schema_version: 20221111,
+              device: "imported",
+              device_id: "",
+              snapshot: {
+                books: [
+                  {
+                    md5: "abc",
+                    title: "A",
+                    authors: "X",
+                    notes: 1,
+                    last_open: 100,
+                    highlights: 2,
+                    pages: 100,
+                    series: "",
+                    language: "en",
+                    total_read_time: 10,
+                    total_read_pages: 5,
+                    page_stat_data: [{ page: 1, start_time: 1, duration: 10, total_pages: 100 }],
+                  },
+                  {
+                    md5: "newbook",
+                    title: "New Book",
+                    authors: "Y",
+                    notes: 0,
+                    last_open: 200,
+                    highlights: 0,
+                    pages: 50,
+                    series: "",
+                    language: "en",
+                    total_read_time: 3,
+                    total_read_pages: 2,
+                    page_stat_data: [{ page: 1, start_time: 5, duration: 9, total_pages: 50 }],
+                  },
+                ],
+              },
+            },
+          }),
+        },
+        env
+      );
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toMatchObject({ status: "ok", statisticsBooks: 2 });
+
+      const meRes = await app.request("/web/me", { headers: { cookie } }, env);
+      const me = await meRes.json();
+      const stored = await getStatisticsSnapshot(env.DB, me.id);
+      expect(stored).not.toBeNull();
+      const snapshot = JSON.parse(stored?.snapshot_json ?? "{}");
+      expect(snapshot.books).toHaveLength(2);
+      const mergedBook = snapshot.books.find((b: { md5: string }) => b.md5 === "abc");
+      expect(mergedBook).toMatchObject({ total_read_time: 10, total_read_pages: 5 });
+    });
+
+    it("rejects empty import payload", async () => {
+      const env = createMockEnv();
+      const cookie = await loginAndSeed(env);
+      const res = await app.request(
+        "/web/import",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({}),
+        },
+        env
+      );
+      expect(res.status).toBe(400);
+    });
   });
 });

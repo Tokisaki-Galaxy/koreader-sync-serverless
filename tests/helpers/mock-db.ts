@@ -193,6 +193,22 @@ class MockD1Database {
       };
     }
 
+    if (q.includes("select document, progress, percentage, device, device_id, timestamp, updated_at") && q.includes("from progress") && q.includes("where user_id = ?")) {
+      const userId = Number(bound[0]);
+      return this.progress
+        .filter((p) => p.user_id === userId)
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .map(({ document, progress, percentage, device, device_id, timestamp, updated_at }) => ({
+          document,
+          progress,
+          percentage,
+          device,
+          device_id,
+          timestamp,
+          updated_at,
+        }));
+    }
+
     if (q.includes("select document, progress, percentage, device, device_id, timestamp") && q.includes("from progress")) {
       const userId = Number(bound[0]);
       const limit = Number(bound[1]);
@@ -209,6 +225,12 @@ class MockD1Database {
           device_id,
           timestamp,
         }));
+    }
+
+    if (q.includes("select username, created_at from users where id = ?")) {
+      const userId = Number(bound[0]);
+      const user = this.users.find((u) => u.id === userId);
+      return user ? { username: user.username, created_at: user.created_at } : null;
     }
 
     if (q.startsWith("insert into sessions (user_id, token_hash, expires_at) values (?, ?, ?)")) {
