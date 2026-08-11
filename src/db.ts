@@ -261,6 +261,16 @@ export async function getUserById(
   return row ?? null;
 }
 
+export async function getUserMetaById(
+  db: DatabaseAdapter,
+  userId: number
+): Promise<{ username: string; created_at: number } | null> {
+  const row = await db.prepare("SELECT username, created_at FROM users WHERE id = ?")
+    .bind(userId)
+    .first<{ username: string; created_at: number }>();
+  return row ?? null;
+}
+
 export async function createSession(
   db: DatabaseAdapter,
   userId: number,
@@ -317,6 +327,37 @@ export async function listProgressRecordsByUser(
       device: string;
       device_id: string;
       timestamp: number;
+    }>();
+  return results ?? [];
+}
+
+export async function listAllProgressByUser(
+  db: DatabaseAdapter,
+  userId: number
+): Promise<Array<{
+  document: string;
+  progress: string;
+  percentage: number;
+  device: string;
+  device_id: string;
+  timestamp: number;
+  updated_at: number;
+}>> {
+  const { results } = await db.prepare(
+    `SELECT document, progress, percentage, device, device_id, timestamp, updated_at
+     FROM progress
+     WHERE user_id = ?
+     ORDER BY timestamp DESC`
+  )
+    .bind(userId)
+    .all<{
+      document: string;
+      progress: string;
+      percentage: number;
+      device: string;
+      device_id: string;
+      timestamp: number;
+      updated_at: number;
     }>();
   return results ?? [];
 }

@@ -5,17 +5,32 @@ import {
   deleteSessionByTokenHash,
   findUserByUsername,
   getProgressSummaryByUser,
+  getUserMetaById,
+  getStatisticsSnapshot,
+  listAllProgressByUser,
   listDeviceUsageByUser,
   listProgressRecordsByUser,
+  upsertProgress,
+  upsertStatisticsSnapshot,
 } from "../db";
 import { md5 } from "js-md5";
 import { generateSessionToken, sha256, verifyPassword } from "../crypto";
 import { pickLocale } from "../i18n";
 import { authWebUser, USER_SESSION_COOKIE } from "../services/auth";
 import { badRequest, parsePbkdf2Iterations, parseSessionTtlHours } from "../services/common";
-import { getStatisticsWithSummary } from "../services/statistics";
+import {
+  buildStatisticsSummary,
+  getStatisticsWithSummary,
+  mergeSnapshots,
+  normalizeBook,
+  parseSnapshotFromJson,
+} from "../services/statistics";
+import {
+  getDbFormatPayload,
+  progressDbDataToProgressRows,
+} from "../services/dbformat";
 import { renderUserPage } from "../ui/userPage";
-import type { UserLoginRequest } from "../types";
+import type { StatisticsBookRow, UserLoginRequest } from "../types";
 import type { AppEnv } from "../context";
 
 const router = new Hono<AppEnv>();
@@ -70,6 +85,121 @@ router.get("/web/me", async (c) => {
   const auth = await authWebUser(c);
   if (!auth) return c.json({ error: "Unauthorized" }, 401);
   return c.json({ id: auth.userId, username: auth.username });
+});
+
+// Schema SQL served to the browser so .db files are generated client-side.
+router.get("/web/export/db-format", (c) => {
+  return c.json(getDbFormatPayload());
+});
+
+// Full data export for the current user (progress + statistics snapshot).
+router.get("/web/export/data", async (c) => {
+  const auth = await authWebUser(c);
+  if (!auth) return c.json({ error: "Unauthorized" }, 401);
+
+  const meta = await getUserMetaById(c.get("db"), auth.userId);
+  const progress = await listAllProgressByUser(c.get("db"), auth.userId);
+  const statisticsRow = await getStatisticsSnapshot(c.get("db"), auth.userId);
+  const snapshot = statisticsRow ? parseSnapshotFromJson(statisticsRow.snapshot_json) : null;
+
+  return c.json({
+    username: auth.username,
+    created_at: meta?.created_at ?? 0,
+    progress,
+    statistics: statisticsRow
+      ? {
+          schema_version: statisticsRow.schema_version,
+          device: statisticsRow.device,
+          device_id: statisticsRow.device_id,
+          snapshot,
+        }
+      : null,
+  });
+});
+
+// Import data parsed client-side from a .db file back into this user's account.
+router.post("/web/import", async (c) => {
+  const auth = await authWebUser(c);
+  if (!auth) return c.json({ error: "Unauthorized" }, 401);
+
+  let body: {
+    progress?: unknown;
+    statistics?: {
+      schema_version?: unknown;
+      device?: unknown;
+      device_id?: unknown;
+      snapshot?: { books?: unknown };
+    };
+  };
+  try {
+    body = await c.req.json();
+  } catch {
+    return badRequest("Invalid JSON body");
+  }
+
+  const imported = {
+    progress: 0,
+    statisticsBooks: 0,
+  };
+
+  if (body.progress !== undefined) {
+    if (!Array.isArray(body.progress)) return badRequest("progress must be an array");
+    const rows = progressDbDataToProgressRows({ progress: body.progress });
+    for (const row of rows) {
+      if (!row.document || typeof row.document !== "string") continue;
+      const timestamp = Number.isFinite(Number(row.timestamp)) ? Number(row.timestamp) : Math.floor(Date.now() / 1000);
+      await upsertProgress(c.get("db"), auth.userId, {
+        document: row.document,
+        progress: String(row.progress ?? ""),
+        percentage: Number.isFinite(Number(row.percentage)) ? Number(row.percentage) : 0,
+        device: String(row.device ?? ""),
+        device_id: String(row.device_id ?? ""),
+        timestamp,
+      });
+      imported.progress += 1;
+    }
+  }
+
+  if (body.statistics !== undefined) {
+    const raw = body.statistics;
+    const snapshotPayload = raw.snapshot;
+    const incomingBooksRaw: unknown = snapshotPayload && typeof snapshotPayload === "object"
+      ? (snapshotPayload as { books?: unknown }).books
+      : null;
+    if (snapshotPayload && !Array.isArray(incomingBooksRaw)) {
+      return badRequest("statistics.snapshot.books must be an array");
+    }
+    const rawBooks: unknown[] = Array.isArray(incomingBooksRaw) ? incomingBooksRaw : [];
+
+    const incomingSnapshot = {
+      books: rawBooks.map(normalizeBook).filter((row): row is StatisticsBookRow => row !== null),
+    };
+    const schemaVersion = Number(raw.schema_version) || 20221111;
+    const device = typeof raw.device === "string" && raw.device ? raw.device : "imported";
+    const deviceId = typeof raw.device_id === "string" ? raw.device_id : "";
+
+    const existing = await getStatisticsSnapshot(c.get("db"), auth.userId);
+    const existingSnapshot = existing ? parseSnapshotFromJson(existing.snapshot_json) : null;
+    const mergedSnapshot = mergeSnapshots(existingSnapshot, incomingSnapshot);
+    const summary = buildStatisticsSummary(mergedSnapshot);
+
+    await upsertStatisticsSnapshot(
+      c.get("db"),
+      auth.userId,
+      schemaVersion,
+      device,
+      deviceId,
+      JSON.stringify(mergedSnapshot),
+      JSON.stringify(summary)
+    );
+    imported.statisticsBooks = mergedSnapshot.books.length;
+  }
+
+  if (imported.progress === 0 && imported.statisticsBooks === 0) {
+    return badRequest("Nothing to import");
+  }
+
+  return c.json({ status: "ok", ...imported });
 });
 
 router.get("/web/records", async (c) => {

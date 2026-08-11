@@ -149,6 +149,107 @@ export function parseStatisticsSummary(value: string | null | undefined): Statis
   }
 }
 
+function dedupePageStats(rows: StatisticsPageStatRow[]): StatisticsPageStatRow[] {
+  const map = new Map<string, StatisticsPageStatRow>();
+  for (const row of rows) {
+    const key = JSON.stringify([row.page, row.start_time, row.duration, row.total_pages]);
+    map.set(key, row);
+  }
+  return Array.from(map.values());
+}
+
+function mergeUnknownFields(
+  existing: Record<string, unknown>,
+  incoming: Record<string, unknown>
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...existing };
+  for (const [key, incomingValue] of Object.entries(incoming)) {
+    const existingValue = merged[key];
+    if (incomingValue === undefined || incomingValue === null) continue;
+    if (typeof incomingValue === "string") {
+      if (incomingValue.trim() === "") continue;
+      merged[key] = incomingValue;
+      continue;
+    }
+    if (
+      Array.isArray(incomingValue) &&
+      incomingValue.length === 0 &&
+      Array.isArray(existingValue) &&
+      existingValue.length > 0
+    ) {
+      continue;
+    }
+    merged[key] = incomingValue;
+  }
+  return merged;
+}
+
+function mergeBooks(existing: StatisticsBookRow, incoming: StatisticsBookRow): StatisticsBookRow {
+  const {
+    page_stat_data: existingPageStats,
+    md5: existingMd5,
+    title: existingTitle,
+    authors: existingAuthors,
+    notes: existingNotes,
+    last_open: existingLastOpen,
+    highlights: existingHighlights,
+    pages: existingPages,
+    series: existingSeries,
+    language: existingLanguage,
+    total_read_time: existingTotalReadTime,
+    total_read_pages: existingTotalReadPages,
+    ...existingRest
+  } = existing;
+  const {
+    page_stat_data: incomingPageStats,
+    md5: incomingMd5,
+    title: incomingTitle,
+    authors: incomingAuthors,
+    notes: incomingNotes,
+    last_open: incomingLastOpen,
+    highlights: incomingHighlights,
+    pages: incomingPages,
+    series: incomingSeries,
+    language: incomingLanguage,
+    total_read_time: incomingTotalReadTime,
+    total_read_pages: incomingTotalReadPages,
+    ...incomingRest
+  } = incoming;
+  const unknownFields = mergeUnknownFields(existingRest, incomingRest);
+  return {
+    ...unknownFields,
+    md5: existingMd5,
+    title: incomingTitle || existingTitle,
+    authors: incomingAuthors || existingAuthors,
+    notes: Math.max(existingNotes, incomingNotes),
+    last_open: Math.max(existingLastOpen, incomingLastOpen),
+    highlights: Math.max(existingHighlights, incomingHighlights),
+    pages: Math.max(existingPages, incomingPages),
+    series: incomingSeries || existingSeries,
+    language: incomingLanguage || existingLanguage,
+    total_read_time: Math.max(existingTotalReadTime, incomingTotalReadTime),
+    total_read_pages: Math.max(existingTotalReadPages, incomingTotalReadPages),
+    page_stat_data: dedupePageStats([...existingPageStats, ...incomingPageStats]),
+  };
+}
+
+export function mergeSnapshots(
+  existing: StatisticsSnapshot | null,
+  incoming: StatisticsSnapshot
+): StatisticsSnapshot {
+  const merged = new Map<string, StatisticsBookRow>();
+  for (const book of existing?.books ?? []) {
+    merged.set(book.md5, book);
+  }
+  for (const book of incoming.books) {
+    const current = merged.get(book.md5);
+    merged.set(book.md5, current ? mergeBooks(current, book) : book);
+  }
+  return {
+    books: Array.from(merged.values()).sort((a, b) => a.md5.localeCompare(b.md5)),
+  };
+}
+
 export async function getStatisticsWithSummary(
   db: DatabaseAdapter,
   userId: number
