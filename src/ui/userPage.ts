@@ -699,6 +699,21 @@ export function renderUserPage(locale: Locale): string {
           <div class="mc-grid" id="mcGrid"></div>
         </div>
       </section>
+
+      <section class="card" id="backupCard" style="margin-top: 14px;">
+        <h3 style="margin: 0 0 6px;">${m.exportTitle}</h3>
+        <p class="text-secondary" style="margin: 0 0 12px;">${m.exportDescription}</p>
+        <div class="row">
+          <button id="exportStatisticsBtn">${m.exportStatisticsButton}</button>
+          <button id="exportProgressBtn" class="secondary">${m.exportProgressButton}</button>
+        </div>
+        <h3 style="margin: 16px 0 6px;">${m.importTitle}</h3>
+        <div class="row">
+          <input id="importFile" type="file" accept=".sqlite3,.sqlite,.db" aria-label="${m.importFileLabel}" style="min-width: 220px; padding: 4px;" />
+          <button id="importBtn">${m.importButton}</button>
+        </div>
+        <p id="backupMsg" class="text-secondary" style="margin-top: 8px;"></p>
+      </section>
     </section>
   </div>
 
@@ -1400,6 +1415,293 @@ export function renderUserPage(locale: Locale): string {
     document.getElementById('recordSearch').addEventListener('input', async () => {
       if (currentTab !== 'sync') return;
       try { await loadSyncTab(); } catch {}
+    });
+
+    // ------------------------------------------------------------------
+    // Data backup: client-side .db generation via sql.js (CDN), so that
+    // the Worker stays within its free-tier CPU budget.
+    // ------------------------------------------------------------------
+
+    const SQLJS_BASE = '/assets/';
+    let SQLPromise = null;
+
+    function loadSqlJs() {
+      if (!SQLPromise) {
+        SQLPromise = new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = SQLJS_BASE + 'sql-wasm.js';
+          script.onload = function() {
+            if (typeof initSqlJs === 'function') {
+              resolve(initSqlJs({ locateFile: function(file) { return SQLJS_BASE + file; } }));
+            } else {
+              reject(new Error('initSqlJs not found'));
+            }
+          };
+          script.onerror = function() { reject(new Error('Failed to load sql.js')); };
+          document.head.appendChild(script);
+        });
+      }
+      return SQLPromise;
+    }
+
+    function setBackupMsg(text, isError) {
+      setMessage(document.getElementById('backupMsg'), text, isError);
+    }
+
+    function downloadBlob(bytes, filename) {
+      const blob = new Blob([bytes], { type: 'application/vnd.sqlite3' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+    }
+
+    function buildStatisticsDb(db, data, format) {
+      db.run(format.statisticsSchemaSql);
+      const rows = mapStatisticsToRows(data);
+      const insertBook = db.prepare(
+        'INSERT INTO book (title, authors, notes, last_open, highlights, pages, series, language, md5, total_read_time, total_read_pages) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+      );
+      const insertStat = db.prepare(
+        'INSERT INTO page_stat_data (id_book, page, start_time, duration, total_pages) VALUES (?,?,?,?,?)'
+      );
+      db.run('BEGIN TRANSACTION;');
+      try {
+        for (const book of rows.books) {
+          insertBook.run([book.title, book.authors, book.notes, book.last_open, book.highlights, book.pages, book.series, book.language, book.md5, book.total_read_time, book.total_read_pages]);
+        }
+        for (const stat of rows.pageStatData) {
+          insertStat.run([stat.id_book, stat.page, stat.start_time, stat.duration, stat.total_pages]);
+        }
+        db.run('COMMIT;');
+      } catch (e) {
+        db.run('ROLLBACK;');
+        throw e;
+      }
+    }
+
+    function mapStatisticsToRows(data) {
+      const books = [];
+      const pageStatData = [];
+      const snapshotBooks = (data.statistics && data.statistics.snapshot && data.statistics.snapshot.books) || [];
+      snapshotBooks.forEach(function(book, index) {
+        const id = index + 1;
+        books.push({
+          title: book.title || '',
+          authors: book.authors || '',
+          notes: Number(book.notes) || 0,
+          last_open: Number(book.last_open) || 0,
+          highlights: Number(book.highlights) || 0,
+          pages: Number(book.pages) || 0,
+          series: book.series || '',
+          language: book.language || '',
+          md5: book.md5 || '',
+          total_read_time: Number(book.total_read_time) || 0,
+          total_read_pages: Number(book.total_read_pages) || 0,
+        });
+        (book.page_stat_data || []).forEach(function(stat) {
+          pageStatData.push({
+            id_book: id,
+            page: stat.page == null ? null : Number(stat.page),
+            start_time: Number(stat.start_time) || 0,
+            duration: Number(stat.duration) || 0,
+            total_pages: Number(stat.total_pages) || 0,
+          });
+        });
+      });
+      return { books: books, pageStatData: pageStatData };
+    }
+
+    function buildProgressDb(db, data, format) {
+      db.run(format.progressSchemaSql);
+      const insertUser = db.prepare('INSERT INTO users (id, username, created_at) VALUES (?,?,?)');
+      insertUser.run([1, data.username || '', Number(data.created_at) || 0]);
+      const insertProgress = db.prepare(
+        'INSERT INTO progress (user_id, document, progress, percentage, device, device_id, timestamp, updated_at) VALUES (?,?,?,?,?,?,?,?)'
+      );
+      db.run('BEGIN TRANSACTION;');
+      try {
+        for (const row of data.progress || []) {
+          insertProgress.run([1, row.document, row.progress || '', Number(row.percentage) || 0, row.device || '', row.device_id || '', Number(row.timestamp) || 0, Number(row.updated_at) || Number(row.timestamp) || 0]);
+        }
+        db.run('COMMIT;');
+      } catch (e) {
+        db.run('ROLLBACK;');
+        throw e;
+      }
+    }
+
+    async function exportData() {
+      const [data, format] = await Promise.all([
+        jsonFetch('/web/export/data'),
+        jsonFetch('/web/export/db-format'),
+      ]);
+      const SQL = await loadSqlJs();
+      return { data, format, SQL };
+    }
+
+    document.getElementById('exportStatisticsBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('exportStatisticsBtn');
+      const oldText = btn.textContent;
+      btn.textContent = I18N.exportBusy;
+      btn.disabled = true;
+      try {
+        const { data, format, SQL } = await exportData();
+        const db = new SQL.Database();
+        buildStatisticsDb(db, data, format);
+        const bytes = db.export();
+        db.close();
+        downloadBlob(bytes, 'statistics.sqlite3');
+        setBackupMsg(I18N.statTotalBooks + ': ' + ((data.statistics && data.statistics.snapshot && data.statistics.snapshot.books || []).length), false);
+      } catch (e) {
+        setBackupMsg(e.message || I18N.requestFailed, true);
+      } finally {
+        btn.textContent = oldText;
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('exportProgressBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('exportProgressBtn');
+      const oldText = btn.textContent;
+      btn.textContent = I18N.exportBusy;
+      btn.disabled = true;
+      try {
+        const { data, format, SQL } = await exportData();
+        const db = new SQL.Database();
+        buildProgressDb(db, data, format);
+        const bytes = db.export();
+        db.close();
+        downloadBlob(bytes, 'progress.db');
+        setBackupMsg(I18N.statTotalRecords + ': ' + (data.progress || []).length, false);
+      } catch (e) {
+        setBackupMsg(e.message || I18N.requestFailed, true);
+      } finally {
+        btn.textContent = oldText;
+        btn.disabled = false;
+      }
+    });
+
+    async function parseImportedFile(file, SQL) {
+      const buffer = await file.arrayBuffer();
+      const db = new SQL.Database(new Uint8Array(buffer));
+      const tables = db.exec("SELECT name FROM sqlite_master WHERE type='table'")[0] || { values: [] };
+      const tableNames = new Set((tables.values || []).map(function(row) { return String(row[0]); }));
+      const result = { statistics: null, progress: null };
+
+      if (tableNames.has('book') && tableNames.has('page_stat_data')) {
+        const bookRows = db.exec('SELECT id, title, authors, notes, last_open, highlights, pages, series, language, md5, total_read_time, total_read_pages FROM book')[0] || { values: [] };
+        const statRows = db.exec('SELECT id_book, page, start_time, duration, total_pages FROM page_stat_data')[0] || { values: [] };
+        const books = (bookRows.values || []).map(function(row) {
+          return {
+            id: Number(row[0]) || 0,
+            md5: row[9] || '',
+            title: row[1] || '',
+            authors: row[2] || '',
+            notes: row[3] || 0,
+            last_open: row[4] || 0,
+            highlights: row[5] || 0,
+            pages: row[6] || 0,
+            series: row[7] || '',
+            language: row[8] || '',
+            total_read_time: row[10] || 0,
+            total_read_pages: row[11] || 0,
+            page_stat_data: [],
+          };
+        });
+        // Real KOReader DBs can have gaps in book ids (deleted rows), so map
+        // by exact id instead of assuming ids are dense starting at 1.
+        const bookById = {};
+        for (const b of books) {
+          if (b.id > 0) bookById[b.id] = b;
+        }
+        (statRows.values || []).forEach(function(row) {
+          const book = bookById[Number(row[0])];
+          if (!book) return;
+          book.page_stat_data.push({
+            page: row[1] == null ? null : Number(row[1]),
+            start_time: Number(row[2]) || 0,
+            duration: Number(row[3]) || 0,
+            total_pages: Number(row[4]) || 0,
+          });
+        });
+        // Strip internal ids before sending to the server.
+        for (const b of books) {
+          delete b.id;
+        }
+        result.statistics = {
+          schema_version: 20221111,
+          device: 'imported',
+          device_id: '',
+          snapshot: { books: books },
+        };
+      }
+
+      if (tableNames.has('progress')) {
+        const progressRows = db.exec('SELECT document, progress, percentage, device, device_id, timestamp, updated_at FROM progress')[0] || { values: [] };
+        result.progress = (progressRows.values || []).map(function(row) {
+          return {
+            document: row[0] || '',
+            progress: row[1] || '',
+            percentage: Number(row[2]) || 0,
+            device: row[3] || '',
+            device_id: row[4] || '',
+            timestamp: Number(row[5]) || 0,
+            updated_at: Number(row[6]) || Number(row[5]) || 0,
+          };
+        });
+      }
+
+      db.close();
+      return result;
+    }
+
+    document.getElementById('importBtn').addEventListener('click', async () => {
+      const fileInput = document.getElementById('importFile');
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      const btn = document.getElementById('importBtn');
+      const oldText = btn.textContent;
+      btn.textContent = I18N.importBusy;
+      btn.disabled = true;
+      try {
+        const SQL = await loadSqlJs();
+        const parsed = await parseImportedFile(file, SQL);
+        if (!parsed.statistics && !parsed.progress) {
+          setBackupMsg(I18N.unsupportedFile, true);
+          return;
+        }
+        const res = await fetch('/web/import', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            progress: parsed.progress || undefined,
+            statistics: parsed.statistics || undefined,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || data.message || I18N.requestFailed);
+        let msg = '';
+        if (data.progress > 0) msg += I18N.importSuccessProgressPrefix + data.progress + I18N.importSuccessProgressSuffix;
+        if (data.statisticsBooks > 0) msg += I18N.importSuccessStatisticsPrefix + data.statisticsBooks + I18N.importSuccessStatisticsSuffix;
+        if (!msg) msg = I18N.importEmpty;
+        setBackupMsg(msg, false);
+        fileInput.value = '';
+        tabLoaded.overview = false;
+        tabLoaded.reading = false;
+        tabLoaded.calendar = false;
+        tabLoaded.sync = false;
+        if (currentTab === 'overview') await loadOverview();
+      } catch (e) {
+        setBackupMsg(e.message || I18N.requestFailed, true);
+      } finally {
+        btn.textContent = oldText;
+        btn.disabled = false;
+      }
     });
 
     ensureAuthenticated();

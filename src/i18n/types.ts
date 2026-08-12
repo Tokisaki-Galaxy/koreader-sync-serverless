@@ -90,6 +90,21 @@ export interface UserMessages {
   dateFormatLocale: string;
   dateFormatShort: string;
   dateFormatIso: string;
+  exportTitle: string;
+  exportDescription: string;
+  exportStatisticsButton: string;
+  exportProgressButton: string;
+  importTitle: string;
+  importFileLabel: string;
+  importButton: string;
+  importSuccessProgressPrefix: string;
+  importSuccessProgressSuffix: string;
+  importSuccessStatisticsPrefix: string;
+  importSuccessStatisticsSuffix: string;
+  importEmpty: string;
+  importBusy: string;
+  exportBusy: string;
+  unsupportedFile: string;
 }
 
 export interface LocaleMessages {

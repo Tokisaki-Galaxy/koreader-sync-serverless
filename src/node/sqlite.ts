@@ -10,6 +10,7 @@ type NodeSqlite = {
       all(...params: unknown[]): unknown[];
       run(...params: unknown[]): { changes?: number };
     };
+    close(): void;
   };
 };
 
@@ -55,11 +56,16 @@ class SqliteDatabaseAdapter implements DatabaseAdapter {
         all(...params: unknown[]): unknown[];
         run(...params: unknown[]): { changes?: number };
       };
+      close(): void;
     }
   ) {}
 
   prepare(sql: string) {
     return new SqliteStatementAdapter(this.db.prepare(sql));
+  }
+
+  close() {
+    this.db.close();
   }
 }
 

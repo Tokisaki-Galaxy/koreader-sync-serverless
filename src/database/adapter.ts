@@ -17,4 +17,5 @@ export interface SqlStatement {
 
 export interface DatabaseAdapter {
   prepare(sql: string): SqlStatement;
+  close?(): void;
 }

@@ -130,7 +130,20 @@ docker run --rm -p 8787:8787 \
 - `GET /web/records?page=1&pageSize=20` reading records
 - `GET /web/stats` statistics summary
 - `GET /web/statistics/books` synchronized books statistics list
+- `GET /web/export/db-format` SQLite schema SQL for the client-side exporter
+- `GET /web/export/data` full export payload for the current user (progress + statistics snapshot)
+- `POST /web/import` restore progress/statistics parsed from an exported `.db` file
 - `GET /` user dashboard page
+
+### Data Export / Import (User Web UI)
+
+The user dashboard includes an "Export / Import Data" section after login:
+
+- **Export** downloads two real SQLite files, generated **client-side** (via `sql.js` served from this Worker at `/assets/sql-wasm.js` + `/assets/sql-wasm.wasm`, embedded as base64 constants so no external CDN or build-time module rules are needed, and the Worker stays within the free-tier CPU budget):
+  - `statistics.sqlite3` — official KOReader reading-statistics schema (`book` + `page_stat_data` + `page_stat` view, `PRAGMA user_version=20221111`), readable directly by KOReader devices/tools.
+  - `progress.db` — custom progress schema (`users` + `progress`). Note: official KOReader stores progress per-book in `.sdr/metadata.lua` (not a database), so there is no official progress DB format to match; this is our defined backup format.
+- **Import** restores either file type (auto-detected by its tables) into the current user's account, merging with existing data (statistics are merged by book `md5`).
+
 
 ### Reading Statistics Sync Contract
 

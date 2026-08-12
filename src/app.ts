@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import koreaderRoutes from "./routes/koreader";
 import userRoutes from "./routes/user";
 import adminRoutes from "./routes/admin";
+import assetRoutes from "./routes/assets";
 import { withSecurityHeaders } from "./services/common";
 import type { Env } from "./types";
 import type { AppEnv } from "./context";
@@ -16,6 +17,7 @@ export function createApp() {
     withSecurityHeaders(c.res.headers);
   });
 
+  app.route("/", assetRoutes);
   app.route("/", koreaderRoutes);
   app.route("/", userRoutes);
   app.route("/", adminRoutes);

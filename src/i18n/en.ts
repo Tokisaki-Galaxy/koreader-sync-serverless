@@ -93,6 +93,22 @@ const en: LocaleMessages = {
     dateFormatLocale: "Locale",
     dateFormatShort: "DD.MM.YYYY, HH:mm",
     dateFormatIso: "ISO 8601",
+
+    exportTitle: "Export / Import Data",
+    exportDescription: "Download your data as SQLite databases, or restore from a previously exported file. Statistics use the official KOReader statistics.sqlite3 format; progress uses a custom progress.db.",
+    exportStatisticsButton: "Export statistics.sqlite3",
+    exportProgressButton: "Export progress.db",
+    importTitle: "Restore from file",
+    importFileLabel: "Choose a .sqlite3/.db file",
+    importButton: "Import",
+    importSuccessProgressPrefix: "Imported ",
+    importSuccessProgressSuffix: " progress records.",
+    importSuccessStatisticsPrefix: "Imported statistics (",
+    importSuccessStatisticsSuffix: " books).",
+    importEmpty: "Nothing to import.",
+    importBusy: "Importing…",
+    exportBusy: "Preparing download…",
+    unsupportedFile: "Unsupported file: no recognized tables found.",
   },
 };
 
