@@ -460,18 +460,21 @@ describe("worker integration", () => {
   });
 
   describe("user data export/import", () => {
-    it("serves self-hosted sql.js assets (no CDN needed)", async () => {
+    it("serves self-hosted sql.js assets (real bytes, no CDN needed)", async () => {
       const env = createMockEnv();
       const jsRes = await app.request("/assets/sql-wasm.js", { method: "GET" }, env);
       expect(jsRes.status).toBe(200);
       expect(jsRes.headers.get("content-type")).toContain("javascript");
-      expect(await jsRes.text()).toContain("sql-wasm");
+      const jsText = await jsRes.text();
+      expect(jsText).toContain("var initSqlJs = function");
 
       const wasmRes = await app.request("/assets/sql-wasm.wasm", { method: "GET" }, env);
       expect(wasmRes.status).toBe(200);
       expect(wasmRes.headers.get("content-type")).toContain("wasm");
-      const bytes = await wasmRes.arrayBuffer();
-      expect(bytes.byteLength).toBe(0); // stubbed in vitest; real bytes at deploy
+      const bytes = new Uint8Array(await wasmRes.arrayBuffer());
+      // Real wasm magic: \0asm
+      expect(String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3])).toBe("\0asm");
+      expect(bytes.byteLength).toBeGreaterThan(100000);
     });
 
     async function loginAndSeed(env: ReturnType<typeof createMockEnv>) {
