@@ -709,7 +709,7 @@ export function renderUserPage(locale: Locale): string {
         </div>
         <h3 style="margin: 16px 0 6px;">${m.importTitle}</h3>
         <div class="row">
-          <input id="importFile" type="file" accept=".sqlite3,.sqlite,.db" style="min-width: 220px; padding: 4px;" />
+          <input id="importFile" type="file" accept=".sqlite3,.sqlite,.db" aria-label="${m.importFileLabel}" style="min-width: 220px; padding: 4px;" />
           <button id="importBtn">${m.importButton}</button>
         </div>
         <p id="backupMsg" class="text-secondary" style="margin-top: 8px;"></p>
@@ -1598,6 +1598,7 @@ export function renderUserPage(locale: Locale): string {
         const statRows = db.exec('SELECT id_book, page, start_time, duration, total_pages FROM page_stat_data')[0] || { values: [] };
         const books = (bookRows.values || []).map(function(row) {
           return {
+            id: Number(row[0]) || 0,
             md5: row[9] || '',
             title: row[1] || '',
             authors: row[2] || '',
@@ -1612,8 +1613,14 @@ export function renderUserPage(locale: Locale): string {
             page_stat_data: [],
           };
         });
+        // Real KOReader DBs can have gaps in book ids (deleted rows), so map
+        // by exact id instead of assuming ids are dense starting at 1.
+        const bookById = {};
+        for (const b of books) {
+          if (b.id > 0) bookById[b.id] = b;
+        }
         (statRows.values || []).forEach(function(row) {
-          const book = books[row[0] - 1];
+          const book = bookById[Number(row[0])];
           if (!book) return;
           book.page_stat_data.push({
             page: row[1] == null ? null : Number(row[1]),
@@ -1622,6 +1629,10 @@ export function renderUserPage(locale: Locale): string {
             total_pages: Number(row[4]) || 0,
           });
         });
+        // Strip internal ids before sending to the server.
+        for (const b of books) {
+          delete b.id;
+        }
         result.statistics = {
           schema_version: 20221111,
           device: 'imported',

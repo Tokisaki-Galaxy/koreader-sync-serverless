@@ -174,6 +174,11 @@ router.post("/web/import", async (c) => {
     const incomingSnapshot = {
       books: rawBooks.map(normalizeBook).filter((row): row is StatisticsBookRow => row !== null),
     };
+
+    if (incomingSnapshot.books.length === 0) {
+      return badRequest("statistics.snapshot.books must contain at least one book");
+    }
+
     const schemaVersion = Number(raw.schema_version) || 20221111;
     const device = typeof raw.device === "string" && raw.device ? raw.device : "imported";
     const deviceId = typeof raw.device_id === "string" ? raw.device_id : "";
@@ -192,7 +197,10 @@ router.post("/web/import", async (c) => {
       JSON.stringify(mergedSnapshot),
       JSON.stringify(summary)
     );
-    imported.statisticsBooks = mergedSnapshot.books.length;
+    // Report books actually added by this import (new md5s), not the total
+    // merged count, so an empty import can't masquerade as a success.
+    const existingMd5s = new Set((existingSnapshot?.books ?? []).map((b) => b.md5));
+    imported.statisticsBooks = mergedSnapshot.books.filter((b) => !existingMd5s.has(b.md5)).length;
   }
 
   if (imported.progress === 0 && imported.statisticsBooks === 0) {

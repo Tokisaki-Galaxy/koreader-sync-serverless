@@ -45,12 +45,12 @@ CREATE TABLE IF NOT EXISTS numbers
     (
         number INTEGER PRIMARY KEY
     );
-WITH RECURSIVE counter AS
+    WITH RECURSIVE counter AS
     (
         SELECT 1 as N UNION ALL
         SELECT N + 1 FROM counter WHERE N < 1000
     )
-    INSERT INTO numbers SELECT N AS number FROM counter;
+    INSERT OR IGNORE INTO numbers SELECT N AS number FROM counter;
 
 CREATE VIEW IF NOT EXISTS page_stat AS
     SELECT id_book, first_page + idx - 1 AS page, start_time, duration / (last_page - first_page + 1) AS duration
