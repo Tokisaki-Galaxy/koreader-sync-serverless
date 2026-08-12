@@ -1422,17 +1422,17 @@ export function renderUserPage(locale: Locale): string {
     // the Worker stays within its free-tier CPU budget.
     // ------------------------------------------------------------------
 
-    const SQLJS_CDN_BASE = 'https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/';
+    const SQLJS_BASE = '/assets/';
     let SQLPromise = null;
 
     function loadSqlJs() {
       if (!SQLPromise) {
         SQLPromise = new Promise((resolve, reject) => {
           const script = document.createElement('script');
-          script.src = SQLJS_CDN_BASE + 'sql-wasm.js';
+          script.src = SQLJS_BASE + 'sql-wasm.js';
           script.onload = function() {
             if (typeof initSqlJs === 'function') {
-              resolve(initSqlJs({ locateFile: function(file) { return SQLJS_CDN_BASE + file; } }));
+              resolve(initSqlJs({ locateFile: function(file) { return SQLJS_BASE + file; } }));
             } else {
               reject(new Error('initSqlJs not found'));
             }

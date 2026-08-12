@@ -35,7 +35,7 @@ export function withSecurityHeaders(headers: Headers): Headers {
   headers.set("referrer-policy", "no-referrer");
   headers.set(
     "content-security-policy",
-    "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; object-src 'none'; frame-ancestors 'none';"
+    "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; object-src 'none'; frame-ancestors 'none';"
   );
   return headers;
 }

@@ -5,6 +5,18 @@ compatibility_date = "2026-03-25"
 [vars]
 SESSION_TTL_HOURS = "168"
 
+# Resolve sql.js assets as inline modules so the client-side exporter
+# can load them from the same origin (no external CDN, locked-down CSP).
+[[rules]]
+type = "Text"
+globs = ["**/sql.js/dist/sql-wasm.js"]
+fallthrough = true
+
+[[rules]]
+type = "Data"
+globs = ["**/sql.js/dist/sql-wasm.wasm"]
+fallthrough = true
+
 [[d1_databases]]
 binding = "DB"
 database_name = "koreader-sync-db"

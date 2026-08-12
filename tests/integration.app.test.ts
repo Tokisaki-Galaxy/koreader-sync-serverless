@@ -459,6 +459,20 @@ describe("worker integration", () => {
   });
 
   describe("user data export/import", () => {
+    it("serves self-hosted sql.js assets (no CDN needed)", async () => {
+      const env = createMockEnv();
+      const jsRes = await app.request("/assets/sql-wasm.js", { method: "GET" }, env);
+      expect(jsRes.status).toBe(200);
+      expect(jsRes.headers.get("content-type")).toContain("javascript");
+      expect(await jsRes.text()).toContain("sql-wasm");
+
+      const wasmRes = await app.request("/assets/sql-wasm.wasm", { method: "GET" }, env);
+      expect(wasmRes.status).toBe(200);
+      expect(wasmRes.headers.get("content-type")).toContain("wasm");
+      const bytes = await wasmRes.arrayBuffer();
+      expect(bytes.byteLength).toBe(0); // stubbed in vitest; real bytes at deploy
+    });
+
     async function loginAndSeed(env: ReturnType<typeof createMockEnv>) {
       const md5Password = "5f4dcc3b5aa765d61d8327deb882cf99";
       const register = await app.request(
