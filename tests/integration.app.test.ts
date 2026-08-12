@@ -13,6 +13,7 @@ describe("worker integration", () => {
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ state: "OK" });
     expect(res.headers.get("x-frame-options")).toBe("DENY");
+    expect(res.headers.get("content-security-policy")).toContain("'wasm-unsafe-eval'");
   });
 
   it("handles KOReader register + sync + fetch flow", async () => {

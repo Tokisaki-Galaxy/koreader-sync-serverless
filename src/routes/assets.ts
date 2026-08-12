@@ -1,10 +1,10 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../context";
-// These are resolved by wrangler module rules at build time:
-//   - sql-wasm.js  -> Text module  (string source)
-//   - sql-wasm.wasm -> Data module (ArrayBuffer)
-// See the [[rules]] section in wrangler.toml. Tests mock these in vitest.config.ts.
-import sqlWasmJs from "sql.js/dist/sql-wasm.js";
+// sql-wasm.js is vendored as src/vendor/sql-wasm.js.txt and imported as a
+// Text module (wrangler's default rule for .txt) so its raw source is served
+// to the browser as a classic script. sql-wasm.wasm is imported via the
+// [[rules]] Data module (ArrayBuffer). Tests stub both in vitest.config.ts.
+import sqlWasmJs from "../vendor/sql-wasm.js.txt";
 import sqlWasmBytes from "sql.js/dist/sql-wasm.wasm";
 
 const router = new Hono<AppEnv>();

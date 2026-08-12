@@ -1,9 +1,9 @@
-declare module "sql.js/dist/sql-wasm.js" {
+declare module "*.txt" {
   const content: string;
   export default content;
 }
 
-declare module "sql.js/dist/sql-wasm.wasm" {
+declare module "*.wasm" {
   const content: ArrayBuffer;
   export default content;
 }

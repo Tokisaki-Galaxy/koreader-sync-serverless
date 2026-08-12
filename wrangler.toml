@@ -5,13 +5,10 @@ compatibility_date = "2026-03-25"
 [vars]
 SESSION_TTL_HOURS = "168"
 
-# Resolve sql.js assets as inline modules so the client-side exporter
-# can load them from the same origin (no external CDN, locked-down CSP).
-[[rules]]
-type = "Text"
-globs = ["**/sql.js/dist/sql-wasm.js"]
-fallthrough = true
-
+# Resolve the sql.js wasm as a Data module so the client-side exporter
+# can load it from the same origin (no external CDN, locked-down CSP).
+# sql-wasm.js is vendored as src/vendor/sql-wasm.js.txt and handled by
+# wrangler's default Text rule for .txt files.
 [[rules]]
 type = "Data"
 globs = ["**/sql.js/dist/sql-wasm.wasm"]

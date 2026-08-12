@@ -237,4 +237,15 @@ describe("real-sqlite in-process smoke", () => {
     expect(data.statisticsSchemaSql).toContain("CREATE TABLE");
     expect(data.progressSchemaSql).toContain("CREATE TABLE");
   });
+
+  it("serves self-hosted sql.js assets on real runtime", async () => {
+    const jsRes = await app.request("/assets/sql-wasm.js", { method: "GET" }, env);
+    expect(jsRes.status).toBe(200);
+    expect(jsRes.headers.get("content-type")).toContain("javascript");
+    expect(await jsRes.text()).toContain("stubbed sql-wasm.js");    expect(jsRes.headers.get("content-security-policy")).toContain("'wasm-unsafe-eval'");
+
+    const wasmRes = await app.request("/assets/sql-wasm.wasm", { method: "GET" }, env);
+    expect(wasmRes.status).toBe(200);
+    expect(wasmRes.headers.get("content-type")).toContain("wasm");
+  });
 });

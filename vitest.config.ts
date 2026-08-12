@@ -13,21 +13,22 @@ export default defineConfig({
       },
     },
     {
-      // wrangler resolves these via [[rules]] (Text/Data modules); vitest
-      // can't execute the emscripten loader source, so stub them out.
+      // wrangler resolves these via module rules (Text for .txt, Data for
+      // .wasm); vitest can't execute the emscripten loader source, so stub
+      // them out.
       name: "sqljs-assets-stub",
       enforce: "pre",
       resolveId(id) {
-        if (id === "sql.js/dist/sql-wasm.js" || id === "sql.js/dist/sql-wasm.wasm") {
+        if (id.endsWith("/sql-wasm.js.txt") || id.endsWith("sql.js/dist/sql-wasm.wasm")) {
           return "\0" + id;
         }
         return null;
       },
       load(id) {
-        if (id === "\0sql.js/dist/sql-wasm.js") {
+        if (id.endsWith("/sql-wasm.js.txt")) {
           return "export default '/* stubbed sql-wasm.js */';";
         }
-        if (id === "\0sql.js/dist/sql-wasm.wasm") {
+        if (id.endsWith("sql.js/dist/sql-wasm.wasm")) {
           return "export default new ArrayBuffer(0);";
         }
         return null;
