@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import initSqlJs from "sql.js";
 import type { Database } from "sql.js";
 import {
@@ -274,3 +276,105 @@ describe("progress rows <-> progress.db", () => {
     expect(rows[0].updated_at).toBe(1234);
   });
 });
+
+// ---------------------------------------------------------------------------
+// End-to-end check of the client-side exporter contract: the vendored
+// sql-wasm.js source (served from /assets/sql-wasm.js) must expose a global
+// initSqlJs when executed like a classic browser script, and the served wasm
+// must produce a valid SQLite database in the official KOReader schema.
+// ---------------------------------------------------------------------------
+
+describe("vendored browser assets", () => {
+  it("vendored sql-wasm.js.txt exposes initSqlJs as a global function", () => {
+    const source = readVendoredSqlJs();
+    expect(source).toContain("var initSqlJs = function");
+    // Classic script semantics: no exports/module/define in scope.
+    const fn = new Function(source + "\nreturn typeof initSqlJs;");
+    expect(fn()).toBe("function");
+  });
+
+  it("generates a valid official statistics.sqlite3 via the vendored source + real wasm", async () => {
+    const SQL = await loadBrowserSqlJs();
+    const db = new SQL.Database();
+    db.run(OFFICIAL_STATISTICS_DB_SCHEMA_SQL);
+    db.run("PRAGMA user_version;");
+
+    const { books, pageStatData } = snapshotToStatisticsDbRows({ books: sampleBooks });
+    const insertBook = db.prepare(
+      "INSERT INTO book (title, authors, notes, last_open, highlights, pages, series, language, md5, total_read_time, total_read_pages) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+    );
+    const insertStat = db.prepare(
+      "INSERT INTO page_stat_data (id_book, page, start_time, duration, total_pages) VALUES (?,?,?,?,?)"
+    );
+    for (const book of books) {
+      insertBook.run([book.title, book.authors, book.notes, book.last_open, book.highlights, book.pages, book.series, book.language, book.md5, book.total_read_time, book.total_read_pages]);
+    }
+    for (const stat of pageStatData) {
+      insertStat.run([stat.id_book, stat.page, stat.start_time, stat.duration, stat.total_pages]);
+    }
+
+    const exported = db.export();
+    db.close();
+
+    // The exported bytes must be a real SQLite file readable by sql.js again.
+    const db2 = new SQL.Database(exported);
+    const version = readTable(db2, "PRAGMA user_version");
+    expect(Number(version[0]?.user_version)).toBe(20221111);
+    const bookCount = readTable(db2, "SELECT count(*) AS c FROM book");
+    expect(Number(bookCount[0]?.c)).toBe(2);
+    db2.close();
+  });
+});
+
+function readVendoredSqlJs(): string {
+  const here = fileURLToPath(import.meta.url);
+  const vendorPath = here.replace(/tests[\\/]unit\.dbformat\.test\.ts$/, "src/vendor/sql-wasm.js.txt");
+  return readFileSync(vendorPath, "utf8");
+}
+
+let browserSqlPromise: Promise<Database> | null = null;
+async function loadBrowserSqlJs(): Promise<Database> {
+  if (!browserSqlPromise) {
+    const wasmPath = fileURLToPath(import.meta.url).replace(
+      /tests[\\/]unit\.dbformat\.test\.ts$/,
+      "node_modules/sql.js/dist/sql-wasm.wasm"
+    );
+    const wasm = readFileSync(wasmPath);
+    const source = readVendoredSqlJs();
+    const { createContext, runInContext } = await import("node:vm");
+
+    const sandbox: Record<string, unknown> = {
+      fetch: async (url: string) => {
+        if (String(url).endsWith(".wasm")) {
+          return {
+            ok: true,
+            arrayBuffer: () =>
+              Promise.resolve(
+                wasm.buffer.slice(wasm.byteOffset, wasm.byteOffset + wasm.byteLength)
+              ),
+          };
+        }
+        throw new Error("unexpected fetch: " + url);
+      },
+      setTimeout,
+      clearTimeout,
+      setInterval,
+      clearInterval,
+      atob,
+      btoa,
+      TextDecoder,
+      TextEncoder,
+      performance: { now: () => Date.now() },
+      crypto: {},
+      console,
+    };
+    sandbox.window = sandbox;
+    createContext(sandbox);
+    runInContext(source, sandbox, { filename: "sql-wasm.js" });
+    const init = sandbox.initSqlJs as (config: unknown) => Promise<Database>;
+    browserSqlPromise = init({
+      locateFile: (f: string) => "https://example.com/" + f,
+    });
+  }
+  return browserSqlPromise;
+}
