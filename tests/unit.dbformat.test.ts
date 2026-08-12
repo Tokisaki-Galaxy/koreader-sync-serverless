@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import initSqlJs from "sql.js";
-import type { Database } from "sql.js";
+import type { Database, SqlJsStatic } from "sql.js";
 import {
   getDbFormatPayload,
   OFFICIAL_STATISTICS_DB_SCHEMA_SQL,
@@ -16,8 +16,8 @@ import {
 } from "../src/services/dbformat";
 import type { StatisticsBookRow, StatisticsSnapshot } from "../src/types";
 
-let sqlPromise: Promise<typeof import("sql.js")> | null = null;
-function getSql(): Promise<Database> {
+let sqlPromise: Promise<SqlJsStatic> | null = null;
+function getSql(): Promise<SqlJsStatic> {
   if (!sqlPromise) {
     sqlPromise = initSqlJs();
   }
@@ -89,6 +89,20 @@ describe("dbformat schemas", () => {
     db.close();
   });
 
+  it("official statistics schema is idempotent (safe to re-run)", async () => {
+    const SQL = await getSql();
+    const db = new SQL.Database();
+    // Running the full schema twice must not throw (numbers table reseed uses
+    // INSERT OR IGNORE so the PRIMARY KEY never conflicts).
+    expect(() => {
+      db.run(OFFICIAL_STATISTICS_DB_SCHEMA_SQL);
+      db.run(OFFICIAL_STATISTICS_DB_SCHEMA_SQL);
+    }).not.toThrow();
+    const numbers = readTable(db, "SELECT count(*) AS c FROM numbers");
+    expect(Number(numbers[0]?.c)).toBe(1000);
+    db.close();
+  });
+
   it("progress schema executes with users/progress tables", async () => {
     const SQL = await getSql();
     const db = new SQL.Database();
@@ -131,6 +145,29 @@ describe("statistics snapshot <-> official db rows", () => {
     expect(roundTrip.books[0].page_stat_data).toHaveLength(2);
     expect(roundTrip.books[1].page_stat_data).toHaveLength(1);
     expect(roundTrip.books[0].total_read_pages).toBe(88);
+  });
+
+  it("attaches page stats by exact id_book even with id gaps", () => {
+    // Real KOReader DBs can have deleted books, leaving id gaps (e.g. 3, 7).
+    const dbData: StatisticsDbData = {
+      books: [
+        { id: 3, title: "B1", authors: "A", notes: 0, last_open: 1, highlights: 0, pages: 100, series: "", language: "en", md5: "m1", total_read_time: 10, total_read_pages: 5 },
+        { id: 7, title: "B2", authors: "A", notes: 0, last_open: 1, highlights: 0, pages: 50, series: "", language: "en", md5: "m2", total_read_time: 4, total_read_pages: 2 },
+      ],
+      pageStatData: [
+        { id_book: 3, page: 1, start_time: 1, duration: 10, total_pages: 100 },
+        { id_book: 7, page: 2, start_time: 2, duration: 20, total_pages: 50 },
+      ],
+    };
+
+    const snapshot = statisticsDbRowsToSnapshot(dbData);
+    expect(snapshot.books).toHaveLength(2);
+    const b1 = snapshot.books.find((b) => b.md5 === "m1");
+    const b2 = snapshot.books.find((b) => b.md5 === "m2");
+    expect(b1?.page_stat_data).toHaveLength(1);
+    expect(b1?.page_stat_data[0].page).toBe(1);
+    expect(b2?.page_stat_data).toHaveLength(1);
+    expect(b2?.page_stat_data[0].page).toBe(2);
   });
 
   it("statistics round-trips through a real sql.js database", async () => {

@@ -221,7 +221,8 @@ describe("real-sqlite in-process smoke", () => {
     );
     expect(importRes.status).toBe(200);
     const importBody = await importRes.json();
-    expect(importBody).toMatchObject({ status: "ok", progress: 1, statisticsBooks: 2 });
+    // "smoke-md5" already exists from the seed, so only "smoke-md5-2" is new.
+    expect(importBody).toMatchObject({ status: "ok", progress: 1, statisticsBooks: 1 });
 
     // Verify merged state via export again
     const exportRes2 = await app.request("/web/export/data", { method: "GET", headers: { cookie } }, env);

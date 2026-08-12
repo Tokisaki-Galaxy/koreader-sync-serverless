@@ -687,7 +687,8 @@ describe("worker integration", () => {
       );
       expect(res.status).toBe(200);
       const body = await res.json();
-      expect(body).toMatchObject({ status: "ok", statisticsBooks: 2 });
+      // "abc" already exists from the seeded account, so only "newbook" counts.
+      expect(body).toMatchObject({ status: "ok", statisticsBooks: 1 });
 
       const meRes = await app.request("/web/me", { headers: { cookie } }, env);
       const me = await meRes.json();
@@ -712,6 +713,86 @@ describe("worker integration", () => {
         env
       );
       expect(res.status).toBe(400);
+    });
+
+    it("rejects statistics import with zero books", async () => {
+      const env = createMockEnv();
+      const cookie = await loginAndSeed(env);
+      const res = await app.request(
+        "/web/import",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({
+            statistics: {
+              schema_version: 20221111,
+              device: "imported",
+              device_id: "",
+              snapshot: { books: [] },
+            },
+          }),
+        },
+        env
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it("reports only newly added books when merging statistics", async () => {
+      const env = createMockEnv();
+      const cookie = await loginAndSeed(env);
+
+      // Existing book "abc" already in the account; importing it again plus
+      // one new book should report statisticsBooks = 1 (the new md5 only).
+      const res = await app.request(
+        "/web/import",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({
+            statistics: {
+              schema_version: 20221111,
+              device: "imported",
+              device_id: "",
+              snapshot: {
+                books: [
+                  {
+                    md5: "abc",
+                    title: "A",
+                    authors: "X",
+                    notes: 1,
+                    last_open: 100,
+                    highlights: 2,
+                    pages: 100,
+                    series: "",
+                    language: "en",
+                    total_read_time: 10,
+                    total_read_pages: 5,
+                    page_stat_data: [{ page: 1, start_time: 1, duration: 10, total_pages: 100 }],
+                  },
+                  {
+                    md5: "brand-new",
+                    title: "Brand New",
+                    authors: "Z",
+                    notes: 0,
+                    last_open: 300,
+                    highlights: 0,
+                    pages: 60,
+                    series: "",
+                    language: "en",
+                    total_read_time: 4,
+                    total_read_pages: 2,
+                    page_stat_data: [{ page: 1, start_time: 9, duration: 12, total_pages: 60 }],
+                  },
+                ],
+              },
+            },
+          }),
+        },
+        env
+      );
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toMatchObject({ status: "ok", statisticsBooks: 1 });
     });
   });
 });
