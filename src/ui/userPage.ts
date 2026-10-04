@@ -309,6 +309,7 @@ export function renderUserPage(locale: Locale): string {
     .tab-panel { display: none; animation: fadeIn .2s ease; }
     .tab-panel.active { display: block; }
     .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    #readingTopGrid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
     .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
     .stat {
       background: var(--surface);
@@ -726,10 +727,27 @@ export function renderUserPage(locale: Locale): string {
           <div class="stat skeleton skeleton-stat"></div>
           <div class="stat skeleton skeleton-stat"></div>
           <div class="stat skeleton skeleton-stat"></div>
+          <div class="stat skeleton skeleton-stat"></div>
+          <div class="stat skeleton skeleton-stat"></div>
+          <div class="stat skeleton skeleton-stat"></div>
+          <div class="stat skeleton skeleton-stat"></div>
         </div>
         <div class="tab-title-row" style="margin-top: 10px;">
           <h4>${m.statisticsBooksTitle}</h4>
           <div class="toolbar">
+            <input id="bookSearch" type="search" placeholder="${m.searchBooksPlaceholder}" />
+            <select id="bookFilter">
+              <option value="all">${m.filterAll}</option>
+              <option value="reading">${m.filterReading}</option>
+              <option value="completed">${m.filterCompleted}</option>
+              <option value="unread">${m.filterUnread}</option>
+            </select>
+            <select id="bookSort">
+              <option value="last_open">${m.sortLastOpen}</option>
+              <option value="read_time">${m.sortReadTime}</option>
+              <option value="progress">${m.sortProgress}</option>
+              <option value="pages">${m.sortPages}</option>
+            </select>
             <label class="field">${m.booksPagerPage}
               <input id="booksPage" type="number" min="1" value="1" />
             </label>
@@ -981,10 +999,17 @@ export function renderUserPage(locale: Locale): string {
     }
 
     function renderReadingStats(readingStatistics) {
+      const readTime = Number(readingStatistics.totalReadTime || 0);
+      const readPages = Number(readingStatistics.totalReadPages || 0);
+      const speed = readTime > 0 ? (readPages / (readTime / 3600)).toFixed(1) + ' p/h' : '-';
       const items = [
         [I18N.statTotalBooks, Number(readingStatistics.totalBooks || 0)],
-        [I18N.statTotalReadTime, formatDuration(readingStatistics.totalReadTime)],
-        [I18N.statTotalReadPages, Number(readingStatistics.totalReadPages || 0)],
+        [I18N.statCompletedBooks, Number(readingStatistics.completedBooks || 0)],
+        [I18N.statTotalReadTime, formatDuration(readTime)],
+        [I18N.statTotalReadPages, readPages],
+        [I18N.statReadingSpeed, speed],
+        [I18N.statHighlights, Number(readingStatistics.totalHighlights || 0)],
+        [I18N.statNotes, Number(readingStatistics.totalNotes || 0)],
         [I18N.statLastOpen, formatDate(readingStatistics.lastOpenAt)],
       ];
       document.getElementById('readingTopGrid').innerHTML = items
@@ -1415,9 +1440,18 @@ export function renderUserPage(locale: Locale): string {
     async function loadReadingTab() {
       const page = Math.max(1, Number(document.getElementById('booksPage').value || 1));
       const pageSize = document.getElementById('booksPageSize').value === '100' ? 100 : 50;
+      const search = (document.getElementById('bookSearch')?.value || '').trim();
+      const status = document.getElementById('bookFilter')?.value || 'all';
+      const sort = document.getElementById('bookSort')?.value || 'last_open';
+
+      let queryParams = '?page=' + page + '&pageSize=' + pageSize;
+      if (search) queryParams += '&search=' + encodeURIComponent(search);
+      if (status && status !== 'all') queryParams += '&status=' + encodeURIComponent(status);
+      if (sort) queryParams += '&sort=' + encodeURIComponent(sort);
+
       const [stats, books] = await Promise.all([
         jsonFetch('/web/stats'),
-        jsonFetch('/web/statistics/books?page=' + page + '&pageSize=' + pageSize),
+        jsonFetch('/web/statistics/books' + queryParams),
       ]);
       renderReadingStats(stats.readingStatistics || {});
       renderBooks(books.items || [], books.page || page, books.pageSize || pageSize, books.total || 0);
@@ -1502,6 +1536,28 @@ export function renderUserPage(locale: Locale): string {
 
     refreshBtn.addEventListener('click', async () => {
       try { await activateTab(currentTab, true); } catch {}
+    });
+
+    let bookSearchTimer = null;
+    document.getElementById('bookSearch')?.addEventListener('input', () => {
+      clearTimeout(bookSearchTimer);
+      bookSearchTimer = setTimeout(async () => {
+        if (currentTab !== 'reading') return;
+        document.getElementById('booksPage').value = '1';
+        try { await loadReadingTab(); } catch {}
+      }, 250);
+    });
+
+    document.getElementById('bookFilter')?.addEventListener('change', async () => {
+      if (currentTab !== 'reading') return;
+      document.getElementById('booksPage').value = '1';
+      try { await loadReadingTab(); } catch {}
+    });
+
+    document.getElementById('bookSort')?.addEventListener('change', async () => {
+      if (currentTab !== 'reading') return;
+      document.getElementById('booksPage').value = '1';
+      try { await loadReadingTab(); } catch {}
     });
 
     document.getElementById('loadBooksBtn').addEventListener('click', async () => {

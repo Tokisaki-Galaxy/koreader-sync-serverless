@@ -252,6 +252,18 @@ describe("worker integration", () => {
     expect(booksData.items).toHaveLength(1);
     expect(booksData.items[0].notes).toBe(2);
     expect(booksData.items[0].total_read_time).toBe(20);
+
+    const filteredRes = await app.request("/web/statistics/books?search=a2&status=reading&sort=read_time", { headers: { cookie } }, env);
+    expect(filteredRes.status).toBe(200);
+    const filteredData = await filteredRes.json();
+    expect(filteredData.total).toBe(1);
+    expect(filteredData.items).toHaveLength(1);
+
+    const emptyRes = await app.request("/web/statistics/books?search=nonexistent", { headers: { cookie } }, env);
+    expect(emptyRes.status).toBe(200);
+    const emptyData = await emptyRes.json();
+    expect(emptyData.total).toBe(0);
+    expect(emptyData.items).toHaveLength(0);
   });
 
   it("accepts admin cookie computed from token and pepper", async () => {
