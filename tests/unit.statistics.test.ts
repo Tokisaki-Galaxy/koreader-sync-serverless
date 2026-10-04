@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildStatisticsSummary, parseStatisticsSummary } from "../src/services/statistics";
+import {
+  buildStatisticsSummary,
+  computeHourlyDistribution,
+  computeReadingStreaks,
+  parseStatisticsSummary,
+  type StatisticsSummary,
+} from "../src/services/statistics";
 import type { StatisticsSnapshot } from "../src/types";
 
 function snapshotWithPageStats(books: Array<{ md5: string; page_stat_data: Array<{ start_time: number; duration: number }> }>): StatisticsSnapshot {
@@ -119,5 +125,103 @@ describe("parseStatisticsSummary", () => {
     expect(parseStatisticsSummary("")).toBeNull();
     expect(parseStatisticsSummary("{bad json")).toBeNull();
     expect(parseStatisticsSummary(JSON.stringify({ version: 2, daily: {}, books: {} }))).toBeNull();
+  });
+});
+
+describe("computeReadingStreaks", () => {
+  it("calculates activeDays, currentStreak and longestStreak correctly", () => {
+    // Empty dates
+    expect(computeReadingStreaks([])).toEqual({
+      activeDays: 0,
+      currentStreak: 0,
+      longestStreak: 0,
+    });
+
+    // Reference today: 2026-03-30
+    const today = new Date("2026-03-30T12:00:00Z");
+
+    // Case 1: active today and yesterday -> streak 2
+    expect(computeReadingStreaks(["2026-03-29", "2026-03-30"], today)).toEqual({
+      activeDays: 2,
+      currentStreak: 2,
+      longestStreak: 2,
+    });
+
+    // Case 2: active yesterday but not today -> streak continues up to yesterday (streak 1)
+    expect(computeReadingStreaks(["2026-03-29"], today)).toEqual({
+      activeDays: 1,
+      currentStreak: 1,
+      longestStreak: 1,
+    });
+
+    // Case 3: active 2 days ago but neither today nor yesterday -> current streak 0
+    expect(computeReadingStreaks(["2026-03-28"], today)).toEqual({
+      activeDays: 1,
+      currentStreak: 0,
+      longestStreak: 1,
+    });
+
+    // Case 4: longest streak is historical, current streak is shorter
+    // Dates: 2026-01-01 to 2026-01-04 (streak 4), then 2026-03-29 to 2026-03-30 (streak 2)
+    const dates = ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-03-29", "2026-03-30"];
+    expect(computeReadingStreaks(dates, today)).toEqual({
+      activeDays: 6,
+      currentStreak: 2,
+      longestStreak: 4,
+    });
+  });
+});
+
+describe("computeHourlyDistribution", () => {
+  it("aggregates reading duration by 24 hours across books", () => {
+    const summary: StatisticsSummary = {
+      version: 1,
+      daily: {
+        "2026-03-29": { total_time: 15, total_pages: 5, books_count: 1 },
+        "2026-03-30": { total_time: 30, total_pages: 10, books_count: 2 },
+      },
+      books: {
+        b1: {
+          md5: "b1",
+          title: "Book 1",
+          authors: "Author",
+          notes: 0,
+          last_open: 100,
+          highlights: 0,
+          pages: 100,
+          series: null,
+          language: null,
+          total_read_time: 30,
+          total_read_pages: 10,
+          days: {
+            "2026-03-29": { 8: 15 },
+            "2026-03-30": { 8: 5, 22: 10 },
+          },
+        },
+        b2: {
+          md5: "b2",
+          title: "Book 2",
+          authors: "Author",
+          notes: 0,
+          last_open: 100,
+          highlights: 0,
+          pages: 100,
+          series: null,
+          language: null,
+          total_read_time: 15,
+          total_read_pages: 5,
+          days: {
+            "2026-03-30": { 22: 15 },
+          },
+        },
+      },
+    };
+
+    const dist = computeHourlyDistribution(summary);
+    expect(dist).toHaveLength(24);
+    expect(dist[8]).toBe(20); // 15 + 5
+    expect(dist[22]).toBe(25); // 10 + 15
+    expect(dist[0]).toBe(0);
+    expect(dist[12]).toBe(0);
   });
 });

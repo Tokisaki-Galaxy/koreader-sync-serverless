@@ -20,6 +20,8 @@ import { authWebUser, USER_SESSION_COOKIE } from "../services/auth";
 import { badRequest, parsePbkdf2Iterations, parseSessionTtlHours } from "../services/common";
 import {
   buildStatisticsSummary,
+  computeHourlyDistribution,
+  computeReadingStreaks,
   getStatisticsWithSummary,
   mergeSnapshots,
   normalizeBook,
@@ -352,7 +354,8 @@ router.get("/web/stats/calendar", async (c) => {
   if (!auth) return c.json({ error: "Unauthorized" }, 401);
 
   const withSummary = await getStatisticsWithSummary(c.get("db"), auth.userId);
-  const daily = withSummary?.summary?.daily ?? {};
+  const summary = withSummary?.summary ?? null;
+  const daily = summary?.daily ?? {};
 
   const days = Object.entries(daily)
     .map(([date, minutes]) => ({ date, minutes }))
@@ -364,7 +367,17 @@ router.get("/web/stats/calendar", async (c) => {
     if (!years.includes(y)) years.push(y);
   }
 
-  return c.json({ years, days });
+  const { currentStreak, longestStreak, activeDays } = computeReadingStreaks(daily);
+  const hourlyDistribution = computeHourlyDistribution(summary);
+
+  return c.json({
+    years,
+    days,
+    activeDays,
+    currentStreak,
+    longestStreak,
+    hourlyDistribution,
+  });
 });
 
 router.get("/web/stats/calendar/detail", async (c) => {

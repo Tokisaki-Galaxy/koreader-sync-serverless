@@ -606,9 +606,69 @@ export function renderUserPage(locale: Locale): string {
     .mc-hour-bar.h3 { opacity: .6; }
     .mc-hour-bar.h4 { opacity: .8; }
     .mc-hour-bar.h5 { opacity: 1; }
+    .habits-section { margin-bottom: 24px; }
+    .habits-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+    .hourly-chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px 16px;
+    }
+    .hourly-chart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .hourly-chart-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .hourly-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      height: 120px;
+      padding-top: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .hourly-col {
+      flex: 1;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: center;
+      position: relative;
+    }
+    .hourly-bar {
+      width: 100%;
+      max-width: 18px;
+      min-height: 2px;
+      background: var(--primary);
+      border-radius: 2px 2px 0 0;
+      opacity: .85;
+      transition: opacity var(--transition), height var(--transition);
+      cursor: pointer;
+    }
+    .hourly-bar:hover { opacity: 1; background: var(--accent); }
+    .hourly-labels {
+      display: flex;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .hourly-label {
+      flex: 1;
+      text-align: center;
+      font-size: 10px;
+      color: var(--text-secondary);
+      user-select: none;
+    }
     @media (prefers-color-scheme: dark) { .cal-tooltip { background: #f1f5f9; color: #0f172a; } }
     @media (max-width: 980px) {
       .grid { grid-template-columns: repeat(2, 1fr); }
+      .habits-grid { grid-template-columns: repeat(3, 1fr); }
       .two-col { grid-template-columns: 1fr; }
     }
     @media (max-width: 640px) {
@@ -616,6 +676,7 @@ export function renderUserPage(locale: Locale): string {
       .title { font-size: 18px; }
       input { min-width: 100%; }
       .grid { grid-template-columns: 1fr; }
+      .habits-grid { grid-template-columns: 1fr; }
       .toolbar .field { width: 100%; }
       .toolbar .field input, .toolbar .field select { flex: 1; min-width: 0; width: auto; }
       .tab-title-row { flex-wrap: wrap; }
@@ -824,6 +885,20 @@ export function renderUserPage(locale: Locale): string {
       </section>
 
       <section class="tab-panel" id="tab-calendar">
+        <div class="habits-section" id="habitsSection">
+          <div class="habits-grid">
+            <div class="stat"><div class="k">${m.statCurrentStreak}</div><div class="v" id="habitCurrentStreak">0 <span style="font-size: 14px; font-weight: normal; color: var(--text-secondary);">${m.daysUnit}</span></div></div>
+            <div class="stat"><div class="k">${m.statLongestStreak}</div><div class="v" id="habitLongestStreak">0 <span style="font-size: 14px; font-weight: normal; color: var(--text-secondary);">${m.daysUnit}</span></div></div>
+            <div class="stat"><div class="k">${m.statActiveDays}</div><div class="v" id="habitActiveDays">0 <span style="font-size: 14px; font-weight: normal; color: var(--text-secondary);">${m.daysUnit}</span></div></div>
+          </div>
+          <div class="hourly-chart-card">
+            <div class="hourly-chart-head">
+              <span class="hourly-chart-title">${m.readingHabitsTitle} · ${m.hourlyDistributionLabel}</span>
+            </div>
+            <div class="hourly-bars" id="hourlyBars"></div>
+            <div class="hourly-labels" id="hourlyLabels"></div>
+          </div>
+        </div>
         <div class="cal-toolbar">
           <label>${m.dateFormatLabel}
             <select id="calYearSelect"></select>
@@ -1185,8 +1260,56 @@ export function renderUserPage(locale: Locale): string {
       el.style.top = (e.clientY - 28) + 'px';
     }
 
+    function renderHourlyDistribution(hourly) {
+      var barsEl = document.getElementById('hourlyBars');
+      var labelsEl = document.getElementById('hourlyLabels');
+      if (!barsEl || !labelsEl) return;
+      var arr = Array.isArray(hourly) && hourly.length === 24 ? hourly : new Array(24).fill(0);
+      var max = 0;
+      for (var i = 0; i < 24; i++) {
+        if (arr[i] > max) max = arr[i];
+      }
+      var barsHtml = '';
+      var labelsHtml = '';
+      for (var h = 0; h < 24; h++) {
+        var val = Number(arr[h] || 0);
+        var pct = max > 0 ? Math.max(3, Math.round((val / max) * 100)) : 3;
+        var hStr = (h < 10 ? '0' : '') + h + ':00';
+        barsHtml += '<div class="hourly-col" title="' + hStr + ': ' + val + ' min">' +
+          '<div class="hourly-bar" data-hour="' + hStr + '" data-min="' + val + '" style="height: ' + pct + '%;"></div>' +
+          '</div>';
+        var labelText = (h % 3 === 0) ? (h < 10 ? '0' : '') + h : '';
+        labelsHtml += '<div class="hourly-label">' + labelText + '</div>';
+      }
+      barsEl.innerHTML = barsHtml;
+      labelsEl.innerHTML = labelsHtml;
+    }
+
+    function renderHourlyTooltip(e) {
+      var el = document.getElementById('calTooltip');
+      var target = e.target;
+      if (!target || !target.classList.contains('hourly-bar')) return;
+      var hStr = target.getAttribute('data-hour');
+      var val = target.getAttribute('data-min');
+      el.textContent = hStr + ': ' + val + ' min';
+      el.classList.add('visible');
+      el.style.left = (e.clientX + 12) + 'px';
+      el.style.top = (e.clientY - 28) + 'px';
+    }
+
     async function loadCalendarTab() {
       const data = await jsonFetch('/web/stats/calendar');
+      var curStreak = Number(data.currentStreak || 0);
+      var longStreak = Number(data.longestStreak || 0);
+      var actDays = Number(data.activeDays !== undefined ? data.activeDays : (data.days || []).length);
+      var csEl = document.getElementById('habitCurrentStreak');
+      if (csEl) csEl.innerHTML = curStreak + ' <span style="font-size: 14px; font-weight: normal; color: var(--text-secondary);">' + I18N.daysUnit + '</span>';
+      var lsEl = document.getElementById('habitLongestStreak');
+      if (lsEl) lsEl.innerHTML = longStreak + ' <span style="font-size: 14px; font-weight: normal; color: var(--text-secondary);">' + I18N.daysUnit + '</span>';
+      var adEl = document.getElementById('habitActiveDays');
+      if (adEl) adEl.innerHTML = actDays + ' <span style="font-size: 14px; font-weight: normal; color: var(--text-secondary);">' + I18N.daysUnit + '</span>';
+
+      renderHourlyDistribution(data.hourlyDistribution);
       renderCalendar(data.days || [], data.years || []);
       loadMonthCalendar(new Date().getFullYear(), new Date().getMonth() + 1);
     }
@@ -1576,6 +1699,16 @@ export function renderUserPage(locale: Locale): string {
     document.getElementById('calContainer').addEventListener('mouseover', renderCalendarTooltip);
     document.getElementById('calContainer').addEventListener('mousemove', renderCalendarTooltip);
     document.getElementById('calContainer').addEventListener('mouseout', renderCalendarTooltip);
+
+    var hourlyBarsEl = document.getElementById('hourlyBars');
+    if (hourlyBarsEl) {
+      hourlyBarsEl.addEventListener('mouseover', renderHourlyTooltip);
+      hourlyBarsEl.addEventListener('mousemove', renderHourlyTooltip);
+      hourlyBarsEl.addEventListener('mouseout', function() {
+        var el = document.getElementById('calTooltip');
+        if (el) el.classList.remove('visible');
+      });
+    }
     document.getElementById('calYearSelect').addEventListener('change', async function() {
       try { await loadCalendarTab(); } catch {}
     });

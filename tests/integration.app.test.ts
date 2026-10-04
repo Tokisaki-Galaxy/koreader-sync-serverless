@@ -375,6 +375,12 @@ describe("worker integration", () => {
     const calData = await calRes.json();
     expect(calData.years).toEqual([2024]);
     expect(calData.days).toEqual([{ date: "2024-01-05", minutes: 5 }]);
+    expect(calData.activeDays).toBe(1);
+    expect(typeof calData.currentStreak).toBe("number");
+    expect(calData.longestStreak).toBe(1);
+    expect(calData.hourlyDistribution).toHaveLength(24);
+    expect(calData.hourlyDistribution[10]).toBe(2);
+    expect(calData.hourlyDistribution[11]).toBe(3);
 
     const detailRes = await app.request("/web/stats/calendar/detail?year=2024&month=1", { headers: { cookie } }, env);
     expect(detailRes.status).toBe(200);

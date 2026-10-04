@@ -250,6 +250,117 @@ export function mergeSnapshots(
   };
 }
 
+export interface ReadingStreaks {
+  currentStreak: number;
+  longestStreak: number;
+  activeDays: number;
+}
+
+export function computeReadingStreaks(
+  daily: Record<string, number> | string[],
+  todayRef?: string | Date
+): ReadingStreaks {
+  // Support both Record<string, number> and string[]
+  let activeDates: string[];
+  if (Array.isArray(daily)) {
+    activeDates = daily.slice().sort();
+  } else {
+    activeDates = Object.entries(daily)
+      .filter(([_, mins]) => Number(mins) > 0)
+      .map(([date]) => date)
+      .sort();
+  }
+
+  const activeDays = activeDates.length;
+  if (activeDays === 0) {
+    return { currentStreak: 0, longestStreak: 0, activeDays: 0 };
+  }
+
+  // Helper to parse "YYYY-MM-DD" to UTC day timestamp (in integer days)
+  const parseDayNumber = (dStr: string): number => {
+    const [y, m, d] = dStr.split("-").map(Number);
+    return Math.round(Date.UTC(y, m - 1, d) / 86400000);
+  };
+
+  const dayNumbers = Array.from(new Set(activeDates.map(parseDayNumber))).sort((a, b) => a - b);
+
+  let longestStreak = 0;
+  let currentRun = 0;
+  let prevDay: number | null = null;
+
+  for (const day of dayNumbers) {
+    if (prevDay === null || day === prevDay + 1) {
+      currentRun++;
+    } else {
+      currentRun = 1;
+    }
+    if (currentRun > longestStreak) {
+      longestStreak = currentRun;
+    }
+    prevDay = day;
+  }
+
+  // Calculate current streak
+  // Reference date: default to today in UTC or provided date/string
+  let targetDayNumber: number;
+  if (todayRef instanceof Date) {
+    targetDayNumber = Math.round(
+      Date.UTC(todayRef.getUTCFullYear(), todayRef.getUTCMonth(), todayRef.getUTCDate()) / 86400000
+    );
+  } else if (typeof todayRef === "string") {
+    targetDayNumber = parseDayNumber(todayRef);
+  } else {
+    const now = new Date();
+    targetDayNumber = Math.round(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) / 86400000
+    );
+  }
+
+  const activeDaySet = new Set(dayNumbers);
+  let currentStreak = 0;
+
+  if (activeDaySet.has(targetDayNumber)) {
+    // Today is active: count backwards from today
+    let checkDay = targetDayNumber;
+    while (activeDaySet.has(checkDay)) {
+      currentStreak++;
+      checkDay--;
+    }
+  } else if (activeDaySet.has(targetDayNumber - 1)) {
+    // Today is not active, but yesterday was active: count backwards from yesterday
+    let checkDay = targetDayNumber - 1;
+    while (activeDaySet.has(checkDay)) {
+      currentStreak++;
+      checkDay--;
+    }
+  } else {
+    currentStreak = 0;
+  }
+
+  return { currentStreak, longestStreak, activeDays };
+}
+
+export function computeHourlyDistribution(
+  summary: StatisticsSummary | null | undefined
+): number[] {
+  const distribution = new Array<number>(24).fill(0);
+  if (!summary || !summary.books) return distribution;
+
+  for (const book of Object.values(summary.books)) {
+    if (!book.days) continue;
+    for (const hours of Object.values(book.days)) {
+      for (const [hourKey, mins] of Object.entries(hours)) {
+        const hour = Number(hourKey);
+        if (Number.isInteger(hour) && hour >= 0 && hour < 24) {
+          distribution[hour] += Number(mins) || 0;
+        }
+      }
+    }
+  }
+
+  return distribution;
+}
+
 export async function getStatisticsWithSummary(
   db: DatabaseAdapter,
   userId: number

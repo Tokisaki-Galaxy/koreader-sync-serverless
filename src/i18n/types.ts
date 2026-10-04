@@ -46,6 +46,11 @@ export interface UserMessages {
   copySuccess: string;
   heatStreak: string;
   timeDistribution: string;
+  statCurrentStreak: string;
+  statLongestStreak: string;
+  daysUnit: string;
+  readingHabitsTitle: string;
+  hourlyDistributionLabel: string;
   tabCalendar: string;
   sourceStats: string;
   sourceSync: string;
