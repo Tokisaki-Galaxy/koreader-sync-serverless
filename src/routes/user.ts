@@ -20,6 +20,7 @@ import { authWebUser, USER_SESSION_COOKIE } from "../services/auth";
 import { badRequest, parsePbkdf2Iterations, parseSessionTtlHours } from "../services/common";
 import {
   buildStatisticsSummary,
+  computeBookTrajectory,
   computeHourlyDistribution,
   computeReadingStreaks,
   getStatisticsWithSummary,
@@ -346,6 +347,39 @@ router.get("/web/statistics/books", async (c) => {
     pageSize,
     total: books.length,
     items: pagedBooks,
+  });
+});
+
+router.get("/web/statistics/book/:md5", async (c) => {
+  const auth = await authWebUser(c);
+  if (!auth) return c.json({ error: "Unauthorized" }, 401);
+
+  const md5Param = (c.req.param("md5") || "").trim().toLowerCase();
+  if (!md5Param) {
+    return c.json({ error: "Book not found" }, 404);
+  }
+
+  const row = await getStatisticsSnapshot(c.get("db"), auth.userId);
+  if (!row) {
+    return c.json({ error: "Book not found" }, 404);
+  }
+
+  const snapshot = parseSnapshotFromJson(row.snapshot_json);
+  if (!snapshot || !Array.isArray(snapshot.books)) {
+    return c.json({ error: "Book not found" }, 404);
+  }
+
+  const book = snapshot.books.find(
+    (b) => (b.md5 || "").toLowerCase() === md5Param
+  );
+  if (!book) {
+    return c.json({ error: "Book not found" }, 404);
+  }
+
+  const trajectory = computeBookTrajectory(book);
+  return c.json({
+    ok: true,
+    book: trajectory,
   });
 });
 

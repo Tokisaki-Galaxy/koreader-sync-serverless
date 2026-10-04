@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildStatisticsSummary,
+  computeBookTrajectory,
   computeHourlyDistribution,
   computeReadingStreaks,
   parseStatisticsSummary,
@@ -223,5 +224,66 @@ describe("computeHourlyDistribution", () => {
     expect(dist[22]).toBe(25); // 10 + 15
     expect(dist[0]).toBe(0);
     expect(dist[12]).toBe(0);
+  });
+});
+
+describe("computeBookTrajectory", () => {
+  it("computes trajectory breakdown, speed metrics and sorted recent sessions", () => {
+    const trajectory = computeBookTrajectory({
+      md5: "test-md5",
+      title: "Test Book",
+      authors: "Test Author",
+      series: "Test Series",
+      language: "en",
+      notes: 3,
+      highlights: 5,
+      pages: 200,
+      total_read_pages: 50,
+      total_read_time: 3600,
+      last_open: 1711800000,
+      page_stat_data: [
+        { page: 10, start_time: 1711756800, duration: 600, total_pages: 200 },
+        { page: 12, start_time: 1711757400, duration: 600, total_pages: 200 },
+        { page: 25, start_time: 1711843200, duration: 1200, total_pages: 200 },
+      ],
+    });
+
+    expect(trajectory.md5).toBe("test-md5");
+    expect(trajectory.title).toBe("Test Book");
+    expect(trajectory.total_read_pages).toBe(50);
+    expect(trajectory.total_read_time).toBe(3600);
+    expect(trajectory.reading_speed.seconds_per_page).toBe(72);
+    expect(trajectory.reading_speed.pages_per_hour).toBe(50);
+    expect(trajectory.daily_history.length).toBe(2);
+    expect(trajectory.recent_sessions.length).toBe(3);
+    // Recent sessions sorted desc
+    expect(trajectory.recent_sessions[0].start_time).toBe(1711843200);
+    expect(trajectory.recent_sessions[1].start_time).toBe(1711757400);
+    expect(trajectory.recent_sessions[2].start_time).toBe(1711756800);
+    // Aliases present
+    expect(trajectory.dailyHistory).toBe(trajectory.daily_history);
+    expect(trajectory.recentSessions).toBe(trajectory.recent_sessions);
+    expect(trajectory.readingSpeed).toBe(trajectory.reading_speed);
+  });
+
+  it("handles empty or missing page_stat_data gracefully", () => {
+    const trajectory = computeBookTrajectory({
+      md5: "empty-md5",
+      title: "Empty Book",
+      authors: "None",
+      series: null,
+      language: null,
+      notes: 0,
+      highlights: 0,
+      pages: 100,
+      total_read_pages: 0,
+      total_read_time: 0,
+      last_open: null,
+    });
+
+    expect(trajectory.daily_history).toEqual([]);
+    expect(trajectory.recent_sessions).toEqual([]);
+    expect(trajectory.reading_speed.seconds_per_page).toBeNull();
+    expect(trajectory.reading_speed.pages_per_hour).toBeNull();
   });
 });

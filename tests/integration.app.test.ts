@@ -264,6 +264,26 @@ describe("worker integration", () => {
     const emptyData = await emptyRes.json();
     expect(emptyData.total).toBe(0);
     expect(emptyData.items).toHaveLength(0);
+
+    // P3: GET /web/statistics/book/:md5 tests
+    const unauthBookRes = await app.request("/web/statistics/book/abc", {}, env);
+    expect(unauthBookRes.status).toBe(401);
+
+    const notFoundBookRes = await app.request("/web/statistics/book/nonexistent", { headers: { cookie } }, env);
+    expect(notFoundBookRes.status).toBe(404);
+    expect(await notFoundBookRes.json()).toEqual({ error: "Book not found" });
+
+    const bookDetailRes = await app.request("/web/statistics/book/abc", { headers: { cookie } }, env);
+    expect(bookDetailRes.status).toBe(200);
+    const bookDetailData = await bookDetailRes.json();
+    expect(bookDetailData.ok).toBe(true);
+    expect(bookDetailData.book.md5).toBe("abc");
+    expect(bookDetailData.book.title).toBe("A2");
+    expect(bookDetailData.book.total_read_time).toBe(20);
+    expect(bookDetailData.book.total_read_pages).toBe(9);
+    expect(bookDetailData.book.daily_history).toHaveLength(1);
+    expect(bookDetailData.book.recent_sessions).toHaveLength(1);
+    expect(bookDetailData.book.reading_speed.seconds_per_page).toBe(2.2);
   });
 
   it("accepts admin cookie computed from token and pepper", async () => {

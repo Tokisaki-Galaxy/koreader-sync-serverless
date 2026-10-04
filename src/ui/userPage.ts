@@ -665,6 +665,178 @@ export function renderUserPage(locale: Locale): string {
       color: var(--text-secondary);
       user-select: none;
     }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--transition);
+    }
+    .modal-backdrop.open,
+    .modal-backdrop.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .modal-dialog {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      width: 100%;
+      max-width: 720px;
+      max-height: 88vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transform: translateY(12px) scale(0.98);
+      transition: transform var(--transition);
+    }
+    .modal-backdrop.open .modal-dialog,
+    .modal-backdrop.active .modal-dialog {
+      transform: translateY(0) scale(1);
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+      line-height: 1.3;
+    }
+    .modal-close-btn {
+      background: transparent;
+      border: none;
+      font-size: 20px;
+      line-height: 1;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+    }
+    .modal-close-btn:hover {
+      color: var(--text);
+      background: var(--surface-hover);
+    }
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .modal-section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 0 0 8px;
+    }
+    .modal-grid-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    .modal-metric-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .modal-metric-label {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+    .modal-metric-val {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .trajectory-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      background: var(--bg);
+    }
+    .trajectory-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      padding: 4px 0;
+      border-bottom: 1px dashed var(--border);
+    }
+    .trajectory-item:last-child {
+      border-bottom: none;
+    }
+    .trajectory-date {
+      font-family: monospace;
+      color: var(--text);
+      font-weight: 500;
+    }
+    .trajectory-stats {
+      color: var(--text-secondary);
+      display: flex;
+      gap: 12px;
+    }
+    .modal-table-wrap {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .book-title-btn {
+      background: none;
+      border: none;
+      padding: 0;
+      color: var(--primary);
+      text-align: left;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .book-title-btn:hover {
+      color: var(--accent);
+    }
+    .action-detail-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--primary);
+      font-size: 11px;
+      padding: 3px 8px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .action-detail-btn:hover {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
     @media (prefers-color-scheme: dark) { .cal-tooltip { background: #f1f5f9; color: #0f172a; } }
     @media (max-width: 980px) {
       .grid { grid-template-columns: repeat(2, 1fr); }
@@ -832,6 +1004,7 @@ export function renderUserPage(locale: Locale): string {
                 <th>${m.tableReadTime}</th>
                 <th>${m.tableReadPages}</th>
                 <th>${m.tableLastOpen}</th>
+                <th>${m.tableActions}</th>
               </tr>
             </thead>
             <tbody id="booksBody"></tbody>
@@ -918,6 +1091,18 @@ export function renderUserPage(locale: Locale): string {
         </div>
       </section>
     </section>
+  </div>
+
+  <div id="bookDetailModal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modalBookTitle">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modalBookTitle">${m.bookDetailModalTitle}</h3>
+        <button type="button" class="modal-close-btn" id="closeBookDetailBtn" aria-label="${m.close}">×</button>
+      </div>
+      <div class="modal-body" id="modalBookBody">
+        <!-- populated dynamically -->
+      </div>
+    </div>
   </div>
 
   <div id="calTooltip" class="cal-tooltip"></div>
@@ -1108,7 +1293,7 @@ export function renderUserPage(locale: Locale): string {
         const rawMd5 = String(item.md5 || '');
         const tr = document.createElement('tr');
         tr.innerHTML =
-          '<td><strong>' + escapeHtml(item.title) + '</strong></td>' +
+          '<td><button type="button" class="book-title-btn open-book-detail" data-md5="' + escapeHtml(rawMd5) + '">' + escapeHtml(item.title) + '</button></td>' +
           '<td>' + escapeHtml(item.authors || '-') + '</td>' +
           '<td><span class="truncate num copy-click" data-copy="' + escapeHtml(rawMd5) + '" title="' + escapeHtml(rawMd5) + ' (Click to copy)">' + escapeHtml(truncateMiddle(rawMd5, 8, 6)) + ' 📋</span></td>' +
           '<td class="num">' + escapeHtml(pages) + '</td>' +
@@ -1118,7 +1303,8 @@ export function renderUserPage(locale: Locale): string {
             '<div class="bar"><span style="width:' + escapeHtml(progress.toFixed(2)) + '%"></span></div>' +
             '<span style="font-size:11px;color:var(--text-tertiary);min-width:38px;text-align:right;">' + escapeHtml(progress.toFixed(0)) + '%</span>' +
           '</td>' +
-          '<td>' + escapeHtml(formatDate(item.last_open)) + '</td>';
+          '<td>' + escapeHtml(formatDate(item.last_open)) + '</td>' +
+          '<td><button type="button" class="action-detail-btn open-book-detail" data-md5="' + escapeHtml(rawMd5) + '">' + escapeHtml(I18N.bookDetailViewDetails) + '</button></td>';
         body.appendChild(tr);
       }
       document.getElementById('booksPage').value = String(page || 1);
@@ -1141,6 +1327,134 @@ export function renderUserPage(locale: Locale): string {
           '<td><span class="truncate num copy-click" data-copy="' + escapeHtml(rawDevId) + '" title="' + escapeHtml(rawDevId) + '">' + escapeHtml(truncateMiddle(rawDevId, 8, 6)) + '</span></td>' +
           '<td>' + escapeHtml(formatDate(item.timestamp)) + '</td>';
         tbody.appendChild(tr);
+      }
+    }
+
+    function closeBookDetailModal() {
+      const modal = document.getElementById('bookDetailModal');
+      if (modal) {
+        modal.classList.remove('active');
+        modal.setAttribute('aria-hidden', 'true');
+      }
+    }
+
+    function openBookDetailModal() {
+      const modal = document.getElementById('bookDetailModal');
+      if (modal) {
+        modal.classList.add('active');
+        modal.setAttribute('aria-hidden', 'false');
+      }
+    }
+
+    async function showBookDetail(md5) {
+      const body = document.getElementById('modalBookBody');
+      const titleEl = document.getElementById('modalBookTitle');
+      if (!body) return;
+      openBookDetailModal();
+      body.innerHTML = '<div class="modal-loading">' + escapeHtml(I18N.loading) + '</div>';
+      try {
+        const data = await jsonFetch('/web/statistics/book/' + encodeURIComponent(md5));
+        const b = data.book;
+        if (!b) {
+          body.innerHTML = '<div class="text-secondary">' + escapeHtml(I18N.errorBookNotFound) + '</div>';
+          return;
+        }
+        if (titleEl) {
+          titleEl.textContent = b.title || I18N.bookDetailModalTitle;
+        }
+        const pages = Number(b.pages || 0);
+        const readPages = Number(b.total_read_pages || 0);
+        const progress = pages > 0 ? Math.min(100, Math.max(0, (readPages / pages) * 100)) : 0;
+        const readTime = Number(b.total_read_time || 0);
+
+        let speedText = '-';
+        if (b.reading_speed && b.reading_speed.pages_per_hour > 0) {
+          speedText = b.reading_speed.pages_per_hour.toFixed(1) + ' ' + I18N.statReadingSpeedPerHour;
+          if (b.reading_speed.seconds_per_page > 0) {
+            speedText += ' (' + b.reading_speed.seconds_per_page.toFixed(1) + ' ' + I18N.statReadingSpeedSecPerPage + ')';
+          }
+        }
+
+        const metaRows = [
+          [I18N.tableTitle, b.title || '-'],
+          [I18N.tableAuthors, b.authors || '-'],
+          [I18N.series || 'Series', b.series || '-'],
+          [I18N.language || 'Language', b.language || '-'],
+          [I18N.tableMd5, b.md5 || '-'],
+          [I18N.statLastOpen, formatDate(b.last_open)],
+        ];
+
+        const metricBoxes = [
+          [I18N.tableReadTime, formatDuration(readTime)],
+          [I18N.tableReadPages, readPages + ' / ' + (pages || '-')],
+          [I18N.statReadingSpeed, speedText],
+          [I18N.statNotes, Number(b.notes || 0)],
+          [I18N.statHighlights, Number(b.highlights || 0)],
+        ];
+
+        let html = '<div class="modal-meta-grid">';
+        for (const [k, v] of metaRows) {
+          html += '<div class="meta-item"><span class="meta-k">' + escapeHtml(k) + ':</span> <span class="meta-v">' + escapeHtml(v) + '</span></div>';
+        }
+        html += '</div>';
+
+        html += '<div class="modal-section-title">' + escapeHtml(I18N.readingProgress || 'Progress') + '</div>';
+        html += '<div class="detail-progress-wrap">';
+        html += '<div class="bar" style="height:10px;"><span style="width:' + escapeHtml(progress.toFixed(2)) + '%;background:var(--primary);height:100%;border-radius:4px;display:block;"></span></div>';
+        html += '<div class="progress-info" style="display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--text-secondary);">';
+        html += '<span>' + escapeHtml(readPages) + ' / ' + escapeHtml(pages) + ' ' + escapeHtml(I18N.tablePages) + '</span>';
+        html += '<span class="num">' + escapeHtml(progress.toFixed(1)) + '%</span>';
+        html += '</div></div>';
+
+        html += '<div class="modal-metric-grid" style="margin-top:16px;">';
+        for (const [k, v] of metricBoxes) {
+          html += '<div class="stat"><div class="k">' + escapeHtml(k) + '</div><div class="v num" style="font-size:15px;">' + escapeHtml(v) + '</div></div>';
+        }
+        html += '</div>';
+
+        const daily = b.daily_history || b.dailyHistory || [];
+        html += '<div class="modal-section-title">' + escapeHtml(I18N.bookDetailDailyBreakdown) + ' (' + daily.length + ')</div>';
+        if (daily.length > 0) {
+          html += '<div class="detail-timeline"><table class="data-table"><thead><tr>';
+          html += '<th>' + escapeHtml(I18N.bookDetailSessionTime) + '</th>';
+          html += '<th>' + escapeHtml(I18N.tableReadTime) + '</th>';
+          html += '<th>' + escapeHtml(I18N.tableReadPages) + '</th>';
+          html += '</tr></thead><tbody>';
+          for (const d of daily) {
+            html += '<tr>';
+            html += '<td>' + escapeHtml(d.date) + '</td>';
+            html += '<td>' + escapeHtml(formatDuration(d.duration)) + '</td>';
+            html += '<td class="num">' + escapeHtml(d.pages) + '</td>';
+            html += '</tr>';
+          }
+          html += '</tbody></table></div>';
+        } else {
+          html += '<div class="text-secondary" style="font-size:13px;padding:8px 0;">' + escapeHtml(I18N.bookDetailNoDailyHistory) + '</div>';
+        }
+
+        const sessions = b.recent_sessions || b.recentSessions || [];
+        html += '<div class="modal-section-title">' + escapeHtml(I18N.bookDetailRecentSessions) + ' (' + sessions.length + ')</div>';
+        if (sessions.length > 0) {
+          html += '<div class="detail-timeline"><table class="data-table"><thead><tr>';
+          html += '<th>' + escapeHtml(I18N.bookDetailSessionTime) + '</th>';
+          html += '<th>' + escapeHtml(I18N.bookDetailSessionPage) + '</th>';
+          html += '<th>' + escapeHtml(I18N.bookDetailSessionDuration) + '</th>';
+          html += '</tr></thead><tbody>';
+          for (const s of sessions) {
+            html += '<tr>';
+            html += '<td>' + escapeHtml(formatDate(s.timestamp)) + '</td>';
+            html += '<td class="num">' + escapeHtml(s.page) + '</td>';
+            html += '<td>' + escapeHtml(formatDuration(s.duration)) + '</td>';
+            html += '</tr>';
+          }
+          html += '</tbody></table></div>';
+        } else {
+          html += '<div class="text-secondary" style="font-size:13px;padding:8px 0;">' + escapeHtml(I18N.bookDetailNoSessions) + '</div>';
+        }
+
+        body.innerHTML = html;
+      } catch (err) {
+        body.innerHTML = '<div class="text-secondary">' + escapeHtml(err.message || I18N.errorBookNotFound) + '</div>';
       }
     }
 
@@ -1688,6 +2002,25 @@ export function renderUserPage(locale: Locale): string {
         await loadReadingTab();
         tabLoaded.reading = true;
       } catch {}
+    });
+
+    document.getElementById('booksBody')?.addEventListener('click', (e) => {
+      const target = e.target.closest('.open-book-detail');
+      if (target && target.dataset.md5) {
+        showBookDetail(target.dataset.md5);
+      }
+    });
+
+    document.getElementById('closeBookDetailBtn')?.addEventListener('click', closeBookDetailModal);
+    document.getElementById('bookDetailModal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'bookDetailModal') {
+        closeBookDetailModal();
+      }
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeBookDetailModal();
+      }
     });
 
     const dateFmtEl = document.getElementById('dateFmtSelect');

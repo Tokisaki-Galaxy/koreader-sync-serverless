@@ -361,6 +361,154 @@ export function computeHourlyDistribution(
   return distribution;
 }
 
+export interface BookDailyReadingHistory {
+  date: string; // YYYY-MM-DD
+  minutes: number;
+  seconds: number;
+  pages: number;
+}
+
+export interface BookRecentReadingSession {
+  start_time: number;
+  startTime: number;
+  duration: number; // in seconds
+  page: number | null;
+  total_pages: number;
+  totalPages: number;
+}
+
+export interface BookTrajectoryDetail {
+  md5: string;
+  title: string;
+  authors: string;
+  series: string;
+  language: string;
+  pages: number;
+  total_read_pages: number;
+  totalReadPages: number;
+  total_read_time: number;
+  totalReadTime: number;
+  notes: number;
+  highlights: number;
+  last_open: number;
+  lastOpen: number;
+  progress: number; // percentage 0 - 100
+  reading_speed: {
+    seconds_per_page: number | null;
+    secondsPerPage: number | null;
+    pages_per_hour: number | null;
+    pagesPerHour: number | null;
+  };
+  readingSpeed: {
+    seconds_per_page: number | null;
+    secondsPerPage: number | null;
+    pages_per_hour: number | null;
+    pagesPerHour: number | null;
+  };
+  daily_history: BookDailyReadingHistory[];
+  dailyHistory: BookDailyReadingHistory[];
+  recent_sessions: BookRecentReadingSession[];
+  recentSessions: BookRecentReadingSession[];
+}
+
+export function computeBookTrajectory(book: StatisticsBookRow): BookTrajectoryDetail {
+  const pageStats = Array.isArray(book.page_stat_data) ? book.page_stat_data : [];
+
+  const dailyMap: Record<string, { seconds: number; pages: Set<number> }> = {};
+  const sessions: BookRecentReadingSession[] = [];
+
+  for (const stat of pageStats) {
+    const startTime = Number(stat.start_time);
+    const duration = Number(stat.duration);
+    if (!Number.isFinite(startTime) || !Number.isFinite(duration) || duration <= 0) continue;
+
+    const page = stat.page == null || !Number.isFinite(Number(stat.page)) ? null : Number(stat.page);
+    const totalPages = Number(stat.total_pages) || Number(book.pages) || 0;
+
+    sessions.push({
+      start_time: startTime,
+      startTime,
+      duration,
+      page,
+      total_pages: totalPages,
+      totalPages,
+    });
+
+    const d = new Date(startTime * 1000);
+    const dateKey =
+      d.getFullYear() +
+      "-" +
+      String(d.getMonth() + 1).padStart(2, "0") +
+      "-" +
+      String(d.getDate()).padStart(2, "0");
+
+    if (!dailyMap[dateKey]) {
+      dailyMap[dateKey] = { seconds: 0, pages: new Set() };
+    }
+    dailyMap[dateKey].seconds += duration;
+    if (page !== null) {
+      dailyMap[dateKey].pages.add(page);
+    }
+  }
+
+  // Sort sessions descending by start_time
+  sessions.sort((a, b) => b.start_time - a.start_time);
+
+  const dailyHistory: BookDailyReadingHistory[] = Object.entries(dailyMap)
+    .map(([date, data]) => ({
+      date,
+      minutes: Math.round(data.seconds / 60),
+      seconds: data.seconds,
+      pages: data.pages.size,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const totalReadPages = Number(book.total_read_pages) || 0;
+  const totalReadTime = Number(book.total_read_time) || 0;
+  const pages = Number(book.pages) || 0;
+  const progress = pages > 0 ? Math.min(100, Math.max(0, (totalReadPages / pages) * 100)) : 0;
+
+  const secondsPerPage =
+    totalReadPages > 0 && totalReadTime > 0
+      ? Math.round((totalReadTime / totalReadPages) * 10) / 10
+      : null;
+  const pagesPerHour =
+    totalReadTime > 0
+      ? Math.round((totalReadPages / (totalReadTime / 3600)) * 10) / 10
+      : null;
+
+  const speedObj = {
+    seconds_per_page: secondsPerPage,
+    secondsPerPage,
+    pages_per_hour: pagesPerHour,
+    pagesPerHour,
+  };
+
+  return {
+    md5: book.md5,
+    title: book.title || "",
+    authors: book.authors || "",
+    series: book.series || "",
+    language: book.language || "",
+    pages,
+    total_read_pages: totalReadPages,
+    totalReadPages,
+    total_read_time: totalReadTime,
+    totalReadTime,
+    notes: Number(book.notes) || 0,
+    highlights: Number(book.highlights) || 0,
+    last_open: Number(book.last_open) || 0,
+    lastOpen: Number(book.last_open) || 0,
+    progress: Math.round(progress * 100) / 100,
+    reading_speed: speedObj,
+    readingSpeed: speedObj,
+    daily_history: dailyHistory,
+    dailyHistory,
+    recent_sessions: sessions,
+    recentSessions: sessions,
+  };
+}
+
 export async function getStatisticsWithSummary(
   db: DatabaseAdapter,
   userId: number

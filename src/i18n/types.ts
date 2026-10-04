@@ -65,6 +65,7 @@ export interface UserMessages {
   recordsToolbarPage: string;
   recordsToolbarPageSize: string;
   loadButton: string;
+  tableActions: string;
   tableDocument: string;
   tableProgress: string;
   tableDevice: string;
@@ -87,6 +88,19 @@ export interface UserMessages {
   statHighlights: string;
   statNotes: string;
   statReadingSpeed: string;
+  statReadingSpeedPerHour: string;
+  statReadingSpeedSecPerPage: string;
+  bookDetailModalTitle: string;
+  bookDetailViewDetails: string;
+  bookDetailDailyBreakdown: string;
+  bookDetailRecentSessions: string;
+  bookDetailNoSessions: string;
+  bookDetailNoDailyHistory: string;
+  bookDetailSessionTime: string;
+  bookDetailSessionPage: string;
+  bookDetailSessionDuration: string;
+  close: string;
+  errorBookNotFound: string;
   statLastOpen: string;
   statisticsBooksTitle: string;
   filterAll: string;
