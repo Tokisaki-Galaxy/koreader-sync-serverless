@@ -806,9 +806,12 @@ export function renderUserPage(locale: Locale): string {
       overflow-y: auto;
     }
     .book-title-btn {
-      background: none;
+      background: transparent;
       border: none;
-      padding: 0;
+      box-shadow: none;
+      padding: 2px 4px;
+      margin: -2px -4px;
+      border-radius: var(--radius-sm);
       color: var(--primary);
       text-align: left;
       font-size: 13px;
@@ -818,7 +821,14 @@ export function renderUserPage(locale: Locale): string {
       text-underline-offset: 2px;
     }
     .book-title-btn:hover {
+      background: transparent;
       color: var(--primary-hover);
+      text-decoration: underline;
+      box-shadow: none;
+    }
+    .book-title-btn:active {
+      transform: none;
+      box-shadow: none;
     }
     .action-detail-btn {
       background: var(--surface);
