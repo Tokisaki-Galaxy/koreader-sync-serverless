@@ -809,21 +809,21 @@ export function renderUserPage(locale: Locale): string {
       background: transparent;
       border: none;
       box-shadow: none;
-      padding: 2px 4px;
-      margin: -2px -4px;
+      padding: 0;
+      margin: 0;
       border-radius: var(--radius-sm);
       color: var(--primary);
       text-align: left;
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
-      text-decoration: underline;
-      text-underline-offset: 2px;
+      text-decoration: none;
     }
     .book-title-btn:hover {
       background: transparent;
       color: var(--primary-hover);
       text-decoration: underline;
+      text-underline-offset: 2px;
       box-shadow: none;
     }
     .book-title-btn:active {
