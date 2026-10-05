@@ -225,6 +225,42 @@ describe("computeHourlyDistribution", () => {
     expect(dist[0]).toBe(0);
     expect(dist[12]).toBe(0);
   });
+
+  it("applies positive and negative timezone offsets correctly", () => {
+    const summary: StatisticsSummary = {
+      version: 1,
+      daily: {},
+      books: {
+        b1: {
+          md5: "b1",
+          title: "Book 1",
+          authors: "Author",
+          notes: 0,
+          last_open: 100,
+          highlights: 0,
+          pages: 100,
+          series: null,
+          language: null,
+          total_read_time: 30,
+          total_read_pages: 10,
+          days: {
+            "2026-03-30": { 14: 30, 22: 15 },
+          },
+        },
+      },
+    };
+
+    // +8 hours: 14 -> 22, 22 -> (22+8)%24 = 6
+    const distPlus8 = computeHourlyDistribution(summary, 8);
+    expect(distPlus8[22]).toBe(30);
+    expect(distPlus8[6]).toBe(15);
+    expect(distPlus8[14]).toBe(0);
+
+    // -5 hours: 14 -> 9, 22 -> 17
+    const distMinus5 = computeHourlyDistribution(summary, -5);
+    expect(distMinus5[9]).toBe(30);
+    expect(distMinus5[17]).toBe(15);
+  });
 });
 
 describe("computeBookTrajectory", () => {

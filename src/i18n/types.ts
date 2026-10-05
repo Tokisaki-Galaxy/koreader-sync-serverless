@@ -122,6 +122,7 @@ export interface UserMessages {
   tableLastOpen: string;
   emptyStatisticsBooks: string;
   noData: string;
+  selectYear: string;
   dateFormatLabel: string;
   dateFormatLocale: string;
   dateFormatShort: string;

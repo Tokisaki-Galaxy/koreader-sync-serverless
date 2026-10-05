@@ -54,7 +54,7 @@ export function renderUserPage(locale: Locale): string {
         --text-secondary: #94a3b8;
         --primary: #6366f1;
         --primary-soft: rgba(99, 102, 241, 0.16);
-        --primary-hover: #4f46e5;
+        --primary-hover: #818cf8;
         --primary-border: rgba(99, 102, 241, 0.35);
         --accent: #10b981;
         --accent-soft: rgba(16, 185, 129, 0.16);
@@ -309,7 +309,6 @@ export function renderUserPage(locale: Locale): string {
     .tab-panel { display: none; animation: fadeIn .2s ease; }
     .tab-panel.active { display: block; }
     .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-    #readingTopGrid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
     .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
     .stat {
       background: var(--surface);
@@ -819,7 +818,7 @@ export function renderUserPage(locale: Locale): string {
       text-underline-offset: 2px;
     }
     .book-title-btn:hover {
-      color: var(--accent);
+      color: var(--primary-hover);
     }
     .action-detail-btn {
       background: var(--surface);
@@ -1073,7 +1072,7 @@ export function renderUserPage(locale: Locale): string {
           </div>
         </div>
         <div class="cal-toolbar">
-          <label>${m.dateFormatLabel}
+          <label>${m.selectYear}
             <select id="calYearSelect"></select>
           </label>
         </div>
@@ -1612,7 +1611,8 @@ export function renderUserPage(locale: Locale): string {
     }
 
     async function loadCalendarTab() {
-      const data = await jsonFetch('/web/stats/calendar');
+      var tzOffsetHours = Math.round(-new Date().getTimezoneOffset() / 60);
+      const data = await jsonFetch('/web/stats/calendar?tzOffset=' + tzOffsetHours);
       var curStreak = Number(data.currentStreak || 0);
       var longStreak = Number(data.longestStreak || 0);
       var actDays = Number(data.activeDays !== undefined ? data.activeDays : (data.days || []).length);

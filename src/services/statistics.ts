@@ -341,10 +341,13 @@ export function computeReadingStreaks(
 }
 
 export function computeHourlyDistribution(
-  summary: StatisticsSummary | null | undefined
+  summary: StatisticsSummary | null | undefined,
+  tzOffsetHours: number = 0
 ): number[] {
   const distribution = new Array<number>(24).fill(0);
   if (!summary || !summary.books) return distribution;
+
+  const offset = Number.isFinite(tzOffsetHours) ? Math.round(tzOffsetHours) : 0;
 
   for (const book of Object.values(summary.books)) {
     if (!book.days) continue;
@@ -352,7 +355,8 @@ export function computeHourlyDistribution(
       for (const [hourKey, mins] of Object.entries(hours)) {
         const hour = Number(hourKey);
         if (Number.isInteger(hour) && hour >= 0 && hour < 24) {
-          distribution[hour] += Number(mins) || 0;
+          const shiftedHour = (((hour + offset) % 24) + 24) % 24;
+          distribution[shiftedHour] += Number(mins) || 0;
         }
       }
     }

@@ -125,6 +125,7 @@ const ja: LocaleMessages = {
     tableLastOpen: "最終オープン",
     emptyStatisticsBooks: "同期済みの読書統計書籍はまだありません。",
     noData: "データなし",
+    selectYear: "年を選択",
     dateFormatLabel: "日付形式",
     dateFormatLocale: "ロケール",
     dateFormatShort: "DD.MM.YYYY, HH:mm",

@@ -125,6 +125,7 @@ const en: LocaleMessages = {
     tableLastOpen: "Last Open",
     emptyStatisticsBooks: "No synchronized statistics books yet.",
     noData: "No data",
+    selectYear: "Select Year",
     dateFormatLabel: "Date Format",
     dateFormatLocale: "Locale",
     dateFormatShort: "DD.MM.YYYY, HH:mm",

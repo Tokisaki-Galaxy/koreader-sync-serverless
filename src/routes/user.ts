@@ -402,7 +402,12 @@ router.get("/web/stats/calendar", async (c) => {
   }
 
   const { currentStreak, longestStreak, activeDays } = computeReadingStreaks(daily);
-  const hourlyDistribution = computeHourlyDistribution(summary);
+  const tzOffsetQuery = c.req.query("tzOffset");
+  const tzOffsetHours = tzOffsetQuery !== undefined && tzOffsetQuery !== "" ? Number(tzOffsetQuery) : 0;
+  const hourlyDistribution = computeHourlyDistribution(
+    summary,
+    Number.isFinite(tzOffsetHours) ? tzOffsetHours : 0
+  );
 
   return c.json({
     years,
