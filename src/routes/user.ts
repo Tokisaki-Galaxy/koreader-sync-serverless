@@ -20,6 +20,9 @@ import { authWebUser, USER_SESSION_COOKIE } from "../services/auth";
 import { badRequest, parsePbkdf2Iterations, parseSessionTtlHours } from "../services/common";
 import {
   buildStatisticsSummary,
+  computeBookTrajectory,
+  computeHourlyDistribution,
+  computeReadingStreaks,
   getStatisticsWithSummary,
   mergeSnapshots,
   normalizeBook,
@@ -235,6 +238,13 @@ router.get("/web/stats", async (c) => {
   const books = withSummary?.summary ? Object.values(withSummary.summary.books) : [];
   const totalReadTime = books.reduce((sum, item) => sum + Number(item.total_read_time || 0), 0);
   const totalReadPages = books.reduce((sum, item) => sum + Number(item.total_read_pages || 0), 0);
+  const totalHighlights = books.reduce((sum, item) => sum + Number(item.highlights || 0), 0);
+  const totalNotes = books.reduce((sum, item) => sum + Number(item.notes || 0), 0);
+  const completedBooks = books.filter((item) => {
+    const pages = Number(item.pages || 0);
+    const readPages = Number(item.total_read_pages || 0);
+    return pages > 0 && readPages >= pages;
+  }).length;
   const statisticsLastOpen = books.reduce((max, item) => Math.max(max, Number(item.last_open || 0)), 0);
 
   return c.json({
@@ -250,6 +260,9 @@ router.get("/web/stats", async (c) => {
       totalBooks: books.length,
       totalReadTime,
       totalReadPages,
+      completedBooks,
+      totalHighlights,
+      totalNotes,
       lastOpenAt: statisticsLastOpen || null,
     },
     devices: devices ?? [],
@@ -262,14 +275,69 @@ router.get("/web/statistics/books", async (c) => {
   const page = Math.max(1, Number(c.req.query("page") || "1"));
   const pageSize = c.req.query("pageSize") === "100" ? 100 : 50;
   const offset = (page - 1) * pageSize;
+  const query = (c.req.query("search") || c.req.query("q") || "").trim().toLowerCase();
+  const status = (c.req.query("status") || "all").trim().toLowerCase();
+  const sortBy = (c.req.query("sort") || c.req.query("sortBy") || "read_time").trim();
+  const sortOrder = c.req.query("sortOrder") === "asc" ? "asc" : "desc";
 
   const withSummary = await getStatisticsWithSummary(c.get("db"), auth.userId);
   if (!withSummary || !withSummary.summary) {
     return c.json({ schemaVersion: null, page, pageSize, total: 0, items: [] });
   }
-  const books = Object.values(withSummary.summary.books).sort(
-    (a, b) => Number(b.total_read_time || 0) - Number(a.total_read_time || 0)
-  );
+
+  let books = Object.values(withSummary.summary.books);
+
+  if (query) {
+    books = books.filter(
+      (b) =>
+        (b.title && b.title.toLowerCase().includes(query)) ||
+        (b.authors && b.authors.toLowerCase().includes(query)) ||
+        (b.md5 && b.md5.toLowerCase().includes(query))
+    );
+  }
+
+  if (status === "completed") {
+    books = books.filter((b) => {
+      const pages = Number(b.pages || 0);
+      const readPages = Number(b.total_read_pages || 0);
+      return pages > 0 && readPages >= pages;
+    });
+  } else if (status === "reading") {
+    books = books.filter((b) => {
+      const pages = Number(b.pages || 0);
+      const readPages = Number(b.total_read_pages || 0);
+      return readPages > 0 && (pages === 0 || readPages < pages);
+    });
+  } else if (status === "unread") {
+    books = books.filter((b) => Number(b.total_read_pages || 0) === 0);
+  }
+
+  books.sort((a, b) => {
+    let valA = 0;
+    let valB = 0;
+    if (sortBy === "last_open") {
+      valA = Number(a.last_open || 0);
+      valB = Number(b.last_open || 0);
+    } else if (sortBy === "pages") {
+      valA = Number(a.pages || 0);
+      valB = Number(b.pages || 0);
+    } else if (sortBy === "progress") {
+      const progA = Number(a.pages || 0) > 0 ? Number(a.total_read_pages || 0) / Number(a.pages) : 0;
+      const progB = Number(b.pages || 0) > 0 ? Number(b.total_read_pages || 0) / Number(b.pages) : 0;
+      valA = progA;
+      valB = progB;
+    } else {
+      // default: read_time
+      valA = Number(a.total_read_time || 0);
+      valB = Number(b.total_read_time || 0);
+    }
+
+    if (valA === valB) {
+      return Number(b.last_open || 0) - Number(a.last_open || 0);
+    }
+    return sortOrder === "asc" ? valA - valB : valB - valA;
+  });
+
   const pagedBooks = books.slice(offset, offset + pageSize);
   return c.json({
     schemaVersion: withSummary.schema_version,
@@ -282,12 +350,46 @@ router.get("/web/statistics/books", async (c) => {
   });
 });
 
+router.get("/web/statistics/book/:md5", async (c) => {
+  const auth = await authWebUser(c);
+  if (!auth) return c.json({ error: "Unauthorized" }, 401);
+
+  const md5Param = (c.req.param("md5") || "").trim().toLowerCase();
+  if (!md5Param) {
+    return c.json({ error: "Book not found" }, 404);
+  }
+
+  const row = await getStatisticsSnapshot(c.get("db"), auth.userId);
+  if (!row) {
+    return c.json({ error: "Book not found" }, 404);
+  }
+
+  const snapshot = parseSnapshotFromJson(row.snapshot_json);
+  if (!snapshot || !Array.isArray(snapshot.books)) {
+    return c.json({ error: "Book not found" }, 404);
+  }
+
+  const book = snapshot.books.find(
+    (b) => (b.md5 || "").toLowerCase() === md5Param
+  );
+  if (!book) {
+    return c.json({ error: "Book not found" }, 404);
+  }
+
+  const trajectory = computeBookTrajectory(book);
+  return c.json({
+    ok: true,
+    book: trajectory,
+  });
+});
+
 router.get("/web/stats/calendar", async (c) => {
   const auth = await authWebUser(c);
   if (!auth) return c.json({ error: "Unauthorized" }, 401);
 
   const withSummary = await getStatisticsWithSummary(c.get("db"), auth.userId);
-  const daily = withSummary?.summary?.daily ?? {};
+  const summary = withSummary?.summary ?? null;
+  const daily = summary?.daily ?? {};
 
   const days = Object.entries(daily)
     .map(([date, minutes]) => ({ date, minutes }))
@@ -299,7 +401,22 @@ router.get("/web/stats/calendar", async (c) => {
     if (!years.includes(y)) years.push(y);
   }
 
-  return c.json({ years, days });
+  const { currentStreak, longestStreak, activeDays } = computeReadingStreaks(daily);
+  const tzOffsetQuery = c.req.query("tzOffset");
+  const tzOffsetHours = tzOffsetQuery !== undefined && tzOffsetQuery !== "" ? Number(tzOffsetQuery) : 0;
+  const hourlyDistribution = computeHourlyDistribution(
+    summary,
+    Number.isFinite(tzOffsetHours) ? tzOffsetHours : 0
+  );
+
+  return c.json({
+    years,
+    days,
+    activeDays,
+    currentStreak,
+    longestStreak,
+    hourlyDistribution,
+  });
 });
 
 router.get("/web/stats/calendar/detail", async (c) => {

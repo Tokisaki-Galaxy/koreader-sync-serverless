@@ -252,6 +252,38 @@ describe("worker integration", () => {
     expect(booksData.items).toHaveLength(1);
     expect(booksData.items[0].notes).toBe(2);
     expect(booksData.items[0].total_read_time).toBe(20);
+
+    const filteredRes = await app.request("/web/statistics/books?search=a2&status=reading&sort=read_time", { headers: { cookie } }, env);
+    expect(filteredRes.status).toBe(200);
+    const filteredData = await filteredRes.json();
+    expect(filteredData.total).toBe(1);
+    expect(filteredData.items).toHaveLength(1);
+
+    const emptyRes = await app.request("/web/statistics/books?search=nonexistent", { headers: { cookie } }, env);
+    expect(emptyRes.status).toBe(200);
+    const emptyData = await emptyRes.json();
+    expect(emptyData.total).toBe(0);
+    expect(emptyData.items).toHaveLength(0);
+
+    // P3: GET /web/statistics/book/:md5 tests
+    const unauthBookRes = await app.request("/web/statistics/book/abc", {}, env);
+    expect(unauthBookRes.status).toBe(401);
+
+    const notFoundBookRes = await app.request("/web/statistics/book/nonexistent", { headers: { cookie } }, env);
+    expect(notFoundBookRes.status).toBe(404);
+    expect(await notFoundBookRes.json()).toEqual({ error: "Book not found" });
+
+    const bookDetailRes = await app.request("/web/statistics/book/abc", { headers: { cookie } }, env);
+    expect(bookDetailRes.status).toBe(200);
+    const bookDetailData = await bookDetailRes.json();
+    expect(bookDetailData.ok).toBe(true);
+    expect(bookDetailData.book.md5).toBe("abc");
+    expect(bookDetailData.book.title).toBe("A2");
+    expect(bookDetailData.book.total_read_time).toBe(20);
+    expect(bookDetailData.book.total_read_pages).toBe(9);
+    expect(bookDetailData.book.daily_history).toHaveLength(1);
+    expect(bookDetailData.book.recent_sessions).toHaveLength(1);
+    expect(bookDetailData.book.reading_speed.seconds_per_page).toBe(2.2);
   });
 
   it("accepts admin cookie computed from token and pepper", async () => {
@@ -363,6 +395,12 @@ describe("worker integration", () => {
     const calData = await calRes.json();
     expect(calData.years).toEqual([2024]);
     expect(calData.days).toEqual([{ date: "2024-01-05", minutes: 5 }]);
+    expect(calData.activeDays).toBe(1);
+    expect(typeof calData.currentStreak).toBe("number");
+    expect(calData.longestStreak).toBe(1);
+    expect(calData.hourlyDistribution).toHaveLength(24);
+    expect(calData.hourlyDistribution[10]).toBe(2);
+    expect(calData.hourlyDistribution[11]).toBe(3);
 
     const detailRes = await app.request("/web/stats/calendar/detail?year=2024&month=1", { headers: { cookie } }, env);
     expect(detailRes.status).toBe(200);

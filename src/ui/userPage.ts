@@ -54,7 +54,7 @@ export function renderUserPage(locale: Locale): string {
         --text-secondary: #94a3b8;
         --primary: #6366f1;
         --primary-soft: rgba(99, 102, 241, 0.16);
-        --primary-hover: #4f46e5;
+        --primary-hover: #818cf8;
         --primary-border: rgba(99, 102, 241, 0.35);
         --accent: #10b981;
         --accent-soft: rgba(16, 185, 129, 0.16);
@@ -605,9 +605,251 @@ export function renderUserPage(locale: Locale): string {
     .mc-hour-bar.h3 { opacity: .6; }
     .mc-hour-bar.h4 { opacity: .8; }
     .mc-hour-bar.h5 { opacity: 1; }
+    .habits-section { margin-bottom: 24px; }
+    .habits-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+    .hourly-chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px 16px;
+    }
+    .hourly-chart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .hourly-chart-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .hourly-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      height: 120px;
+      padding-top: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .hourly-col {
+      flex: 1;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: center;
+      position: relative;
+    }
+    .hourly-bar {
+      width: 100%;
+      max-width: 18px;
+      min-height: 2px;
+      background: var(--primary);
+      border-radius: 2px 2px 0 0;
+      opacity: .85;
+      transition: opacity var(--transition), height var(--transition);
+      cursor: pointer;
+    }
+    .hourly-bar:hover { opacity: 1; background: var(--accent); }
+    .hourly-labels {
+      display: flex;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .hourly-label {
+      flex: 1;
+      text-align: center;
+      font-size: 10px;
+      color: var(--text-secondary);
+      user-select: none;
+    }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--transition);
+    }
+    .modal-backdrop.open,
+    .modal-backdrop.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .modal-dialog {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      width: 100%;
+      max-width: 720px;
+      max-height: 88vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transform: translateY(12px) scale(0.98);
+      transition: transform var(--transition);
+    }
+    .modal-backdrop.open .modal-dialog,
+    .modal-backdrop.active .modal-dialog {
+      transform: translateY(0) scale(1);
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+      line-height: 1.3;
+    }
+    .modal-close-btn {
+      background: transparent;
+      border: none;
+      font-size: 20px;
+      line-height: 1;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+    }
+    .modal-close-btn:hover {
+      color: var(--text);
+      background: var(--surface-hover);
+    }
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .modal-section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 0 0 8px;
+    }
+    .modal-grid-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    .modal-metric-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .modal-metric-label {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+    .modal-metric-val {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .trajectory-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      background: var(--bg);
+    }
+    .trajectory-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      padding: 4px 0;
+      border-bottom: 1px dashed var(--border);
+    }
+    .trajectory-item:last-child {
+      border-bottom: none;
+    }
+    .trajectory-date {
+      font-family: monospace;
+      color: var(--text);
+      font-weight: 500;
+    }
+    .trajectory-stats {
+      color: var(--text-secondary);
+      display: flex;
+      gap: 12px;
+    }
+    .modal-table-wrap {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .book-title-btn {
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      padding: 0;
+      margin: 0;
+      border-radius: var(--radius-sm);
+      color: var(--primary);
+      text-align: left;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .book-title-btn:hover {
+      background: transparent;
+      color: var(--primary-hover);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      box-shadow: none;
+    }
+    .book-title-btn:active {
+      transform: none;
+      box-shadow: none;
+    }
+    .action-detail-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--primary);
+      font-size: 11px;
+      padding: 3px 8px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .action-detail-btn:hover {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
     @media (prefers-color-scheme: dark) { .cal-tooltip { background: #f1f5f9; color: #0f172a; } }
     @media (max-width: 980px) {
       .grid { grid-template-columns: repeat(2, 1fr); }
+      .habits-grid { grid-template-columns: repeat(3, 1fr); }
       .two-col { grid-template-columns: 1fr; }
     }
     @media (max-width: 640px) {
@@ -615,6 +857,7 @@ export function renderUserPage(locale: Locale): string {
       .title { font-size: 18px; }
       input { min-width: 100%; }
       .grid { grid-template-columns: 1fr; }
+      .habits-grid { grid-template-columns: 1fr; }
       .toolbar .field { width: 100%; }
       .toolbar .field input, .toolbar .field select { flex: 1; min-width: 0; width: auto; }
       .tab-title-row { flex-wrap: wrap; }
@@ -726,10 +969,27 @@ export function renderUserPage(locale: Locale): string {
           <div class="stat skeleton skeleton-stat"></div>
           <div class="stat skeleton skeleton-stat"></div>
           <div class="stat skeleton skeleton-stat"></div>
+          <div class="stat skeleton skeleton-stat"></div>
+          <div class="stat skeleton skeleton-stat"></div>
+          <div class="stat skeleton skeleton-stat"></div>
+          <div class="stat skeleton skeleton-stat"></div>
         </div>
         <div class="tab-title-row" style="margin-top: 10px;">
           <h4>${m.statisticsBooksTitle}</h4>
           <div class="toolbar">
+            <input id="bookSearch" type="search" placeholder="${m.searchBooksPlaceholder}" />
+            <select id="bookFilter">
+              <option value="all">${m.filterAll}</option>
+              <option value="reading">${m.filterReading}</option>
+              <option value="completed">${m.filterCompleted}</option>
+              <option value="unread">${m.filterUnread}</option>
+            </select>
+            <select id="bookSort">
+              <option value="last_open">${m.sortLastOpen}</option>
+              <option value="read_time">${m.sortReadTime}</option>
+              <option value="progress">${m.sortProgress}</option>
+              <option value="pages">${m.sortPages}</option>
+            </select>
             <label class="field">${m.booksPagerPage}
               <input id="booksPage" type="number" min="1" value="1" />
             </label>
@@ -753,6 +1013,7 @@ export function renderUserPage(locale: Locale): string {
                 <th>${m.tableReadTime}</th>
                 <th>${m.tableReadPages}</th>
                 <th>${m.tableLastOpen}</th>
+                <th>${m.tableActions}</th>
               </tr>
             </thead>
             <tbody id="booksBody"></tbody>
@@ -806,8 +1067,22 @@ export function renderUserPage(locale: Locale): string {
       </section>
 
       <section class="tab-panel" id="tab-calendar">
+        <div class="habits-section" id="habitsSection">
+          <div class="habits-grid">
+            <div class="stat"><div class="k">${m.statCurrentStreak}</div><div class="v" id="habitCurrentStreak">0 <span style="font-size: 14px; font-weight: normal; color: var(--text-secondary);">${m.daysUnit}</span></div></div>
+            <div class="stat"><div class="k">${m.statLongestStreak}</div><div class="v" id="habitLongestStreak">0 <span style="font-size: 14px; font-weight: normal; color: var(--text-secondary);">${m.daysUnit}</span></div></div>
+            <div class="stat"><div class="k">${m.statActiveDays}</div><div class="v" id="habitActiveDays">0 <span style="font-size: 14px; font-weight: normal; color: var(--text-secondary);">${m.daysUnit}</span></div></div>
+          </div>
+          <div class="hourly-chart-card">
+            <div class="hourly-chart-head">
+              <span class="hourly-chart-title">${m.readingHabitsTitle} · ${m.hourlyDistributionLabel}</span>
+            </div>
+            <div class="hourly-bars" id="hourlyBars"></div>
+            <div class="hourly-labels" id="hourlyLabels"></div>
+          </div>
+        </div>
         <div class="cal-toolbar">
-          <label>${m.dateFormatLabel}
+          <label>${m.selectYear}
             <select id="calYearSelect"></select>
           </label>
         </div>
@@ -825,6 +1100,18 @@ export function renderUserPage(locale: Locale): string {
         </div>
       </section>
     </section>
+  </div>
+
+  <div id="bookDetailModal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modalBookTitle">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modalBookTitle">${m.bookDetailModalTitle}</h3>
+        <button type="button" class="modal-close-btn" id="closeBookDetailBtn" aria-label="${m.close}">×</button>
+      </div>
+      <div class="modal-body" id="modalBookBody">
+        <!-- populated dynamically -->
+      </div>
+    </div>
   </div>
 
   <div id="calTooltip" class="cal-tooltip"></div>
@@ -981,10 +1268,17 @@ export function renderUserPage(locale: Locale): string {
     }
 
     function renderReadingStats(readingStatistics) {
+      const readTime = Number(readingStatistics.totalReadTime || 0);
+      const readPages = Number(readingStatistics.totalReadPages || 0);
+      const speed = readTime > 0 ? (readPages / (readTime / 3600)).toFixed(1) + ' p/h' : '-';
       const items = [
         [I18N.statTotalBooks, Number(readingStatistics.totalBooks || 0)],
-        [I18N.statTotalReadTime, formatDuration(readingStatistics.totalReadTime)],
-        [I18N.statTotalReadPages, Number(readingStatistics.totalReadPages || 0)],
+        [I18N.statCompletedBooks, Number(readingStatistics.completedBooks || 0)],
+        [I18N.statTotalReadTime, formatDuration(readTime)],
+        [I18N.statTotalReadPages, readPages],
+        [I18N.statReadingSpeed, speed],
+        [I18N.statHighlights, Number(readingStatistics.totalHighlights || 0)],
+        [I18N.statNotes, Number(readingStatistics.totalNotes || 0)],
         [I18N.statLastOpen, formatDate(readingStatistics.lastOpenAt)],
       ];
       document.getElementById('readingTopGrid').innerHTML = items
@@ -1008,7 +1302,7 @@ export function renderUserPage(locale: Locale): string {
         const rawMd5 = String(item.md5 || '');
         const tr = document.createElement('tr');
         tr.innerHTML =
-          '<td><strong>' + escapeHtml(item.title) + '</strong></td>' +
+          '<td><button type="button" class="book-title-btn open-book-detail" data-md5="' + escapeHtml(rawMd5) + '">' + escapeHtml(item.title) + '</button></td>' +
           '<td>' + escapeHtml(item.authors || '-') + '</td>' +
           '<td><span class="truncate num copy-click" data-copy="' + escapeHtml(rawMd5) + '" title="' + escapeHtml(rawMd5) + ' (Click to copy)">' + escapeHtml(truncateMiddle(rawMd5, 8, 6)) + ' 📋</span></td>' +
           '<td class="num">' + escapeHtml(pages) + '</td>' +
@@ -1018,7 +1312,8 @@ export function renderUserPage(locale: Locale): string {
             '<div class="bar"><span style="width:' + escapeHtml(progress.toFixed(2)) + '%"></span></div>' +
             '<span style="font-size:11px;color:var(--text-tertiary);min-width:38px;text-align:right;">' + escapeHtml(progress.toFixed(0)) + '%</span>' +
           '</td>' +
-          '<td>' + escapeHtml(formatDate(item.last_open)) + '</td>';
+          '<td>' + escapeHtml(formatDate(item.last_open)) + '</td>' +
+          '<td><button type="button" class="action-detail-btn open-book-detail" data-md5="' + escapeHtml(rawMd5) + '">' + escapeHtml(I18N.bookDetailViewDetails) + '</button></td>';
         body.appendChild(tr);
       }
       document.getElementById('booksPage').value = String(page || 1);
@@ -1041,6 +1336,134 @@ export function renderUserPage(locale: Locale): string {
           '<td><span class="truncate num copy-click" data-copy="' + escapeHtml(rawDevId) + '" title="' + escapeHtml(rawDevId) + '">' + escapeHtml(truncateMiddle(rawDevId, 8, 6)) + '</span></td>' +
           '<td>' + escapeHtml(formatDate(item.timestamp)) + '</td>';
         tbody.appendChild(tr);
+      }
+    }
+
+    function closeBookDetailModal() {
+      const modal = document.getElementById('bookDetailModal');
+      if (modal) {
+        modal.classList.remove('active');
+        modal.setAttribute('aria-hidden', 'true');
+      }
+    }
+
+    function openBookDetailModal() {
+      const modal = document.getElementById('bookDetailModal');
+      if (modal) {
+        modal.classList.add('active');
+        modal.setAttribute('aria-hidden', 'false');
+      }
+    }
+
+    async function showBookDetail(md5) {
+      const body = document.getElementById('modalBookBody');
+      const titleEl = document.getElementById('modalBookTitle');
+      if (!body) return;
+      openBookDetailModal();
+      body.innerHTML = '<div class="modal-loading">' + escapeHtml(I18N.loading) + '</div>';
+      try {
+        const data = await jsonFetch('/web/statistics/book/' + encodeURIComponent(md5));
+        const b = data.book;
+        if (!b) {
+          body.innerHTML = '<div class="text-secondary">' + escapeHtml(I18N.errorBookNotFound) + '</div>';
+          return;
+        }
+        if (titleEl) {
+          titleEl.textContent = b.title || I18N.bookDetailModalTitle;
+        }
+        const pages = Number(b.pages || 0);
+        const readPages = Number(b.total_read_pages || 0);
+        const progress = pages > 0 ? Math.min(100, Math.max(0, (readPages / pages) * 100)) : 0;
+        const readTime = Number(b.total_read_time || 0);
+
+        let speedText = '-';
+        if (b.reading_speed && b.reading_speed.pages_per_hour > 0) {
+          speedText = b.reading_speed.pages_per_hour.toFixed(1) + ' ' + I18N.statReadingSpeedPerHour;
+          if (b.reading_speed.seconds_per_page > 0) {
+            speedText += ' (' + b.reading_speed.seconds_per_page.toFixed(1) + ' ' + I18N.statReadingSpeedSecPerPage + ')';
+          }
+        }
+
+        const metaRows = [
+          [I18N.tableTitle, b.title || '-'],
+          [I18N.tableAuthors, b.authors || '-'],
+          [I18N.series || 'Series', b.series || '-'],
+          [I18N.language || 'Language', b.language || '-'],
+          [I18N.tableMd5, b.md5 || '-'],
+          [I18N.statLastOpen, formatDate(b.last_open)],
+        ];
+
+        const metricBoxes = [
+          [I18N.tableReadTime, formatDuration(readTime)],
+          [I18N.tableReadPages, readPages + ' / ' + (pages || '-')],
+          [I18N.statReadingSpeed, speedText],
+          [I18N.statNotes, Number(b.notes || 0)],
+          [I18N.statHighlights, Number(b.highlights || 0)],
+        ];
+
+        let html = '<div class="modal-meta-grid">';
+        for (const [k, v] of metaRows) {
+          html += '<div class="meta-item"><span class="meta-k">' + escapeHtml(k) + ':</span> <span class="meta-v">' + escapeHtml(v) + '</span></div>';
+        }
+        html += '</div>';
+
+        html += '<div class="modal-section-title">' + escapeHtml(I18N.readingProgress || 'Progress') + '</div>';
+        html += '<div class="detail-progress-wrap">';
+        html += '<div class="bar" style="height:10px;"><span style="width:' + escapeHtml(progress.toFixed(2)) + '%;background:var(--primary);height:100%;border-radius:4px;display:block;"></span></div>';
+        html += '<div class="progress-info" style="display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--text-secondary);">';
+        html += '<span>' + escapeHtml(readPages) + ' / ' + escapeHtml(pages) + ' ' + escapeHtml(I18N.tablePages) + '</span>';
+        html += '<span class="num">' + escapeHtml(progress.toFixed(1)) + '%</span>';
+        html += '</div></div>';
+
+        html += '<div class="modal-metric-grid" style="margin-top:16px;">';
+        for (const [k, v] of metricBoxes) {
+          html += '<div class="stat"><div class="k">' + escapeHtml(k) + '</div><div class="v num" style="font-size:15px;">' + escapeHtml(v) + '</div></div>';
+        }
+        html += '</div>';
+
+        const daily = b.daily_history || b.dailyHistory || [];
+        html += '<div class="modal-section-title">' + escapeHtml(I18N.bookDetailDailyBreakdown) + ' (' + daily.length + ')</div>';
+        if (daily.length > 0) {
+          html += '<div class="detail-timeline"><table class="data-table"><thead><tr>';
+          html += '<th>' + escapeHtml(I18N.bookDetailSessionTime) + '</th>';
+          html += '<th>' + escapeHtml(I18N.tableReadTime) + '</th>';
+          html += '<th>' + escapeHtml(I18N.tableReadPages) + '</th>';
+          html += '</tr></thead><tbody>';
+          for (const d of daily) {
+            html += '<tr>';
+            html += '<td>' + escapeHtml(d.date) + '</td>';
+            html += '<td>' + escapeHtml(formatDuration(d.duration)) + '</td>';
+            html += '<td class="num">' + escapeHtml(d.pages) + '</td>';
+            html += '</tr>';
+          }
+          html += '</tbody></table></div>';
+        } else {
+          html += '<div class="text-secondary" style="font-size:13px;padding:8px 0;">' + escapeHtml(I18N.bookDetailNoDailyHistory) + '</div>';
+        }
+
+        const sessions = b.recent_sessions || b.recentSessions || [];
+        html += '<div class="modal-section-title">' + escapeHtml(I18N.bookDetailRecentSessions) + ' (' + sessions.length + ')</div>';
+        if (sessions.length > 0) {
+          html += '<div class="detail-timeline"><table class="data-table"><thead><tr>';
+          html += '<th>' + escapeHtml(I18N.bookDetailSessionTime) + '</th>';
+          html += '<th>' + escapeHtml(I18N.bookDetailSessionPage) + '</th>';
+          html += '<th>' + escapeHtml(I18N.bookDetailSessionDuration) + '</th>';
+          html += '</tr></thead><tbody>';
+          for (const s of sessions) {
+            html += '<tr>';
+            html += '<td>' + escapeHtml(formatDate(s.timestamp)) + '</td>';
+            html += '<td class="num">' + escapeHtml(s.page) + '</td>';
+            html += '<td>' + escapeHtml(formatDuration(s.duration)) + '</td>';
+            html += '</tr>';
+          }
+          html += '</tbody></table></div>';
+        } else {
+          html += '<div class="text-secondary" style="font-size:13px;padding:8px 0;">' + escapeHtml(I18N.bookDetailNoSessions) + '</div>';
+        }
+
+        body.innerHTML = html;
+      } catch (err) {
+        body.innerHTML = '<div class="text-secondary">' + escapeHtml(err.message || I18N.errorBookNotFound) + '</div>';
       }
     }
 
@@ -1160,8 +1583,57 @@ export function renderUserPage(locale: Locale): string {
       el.style.top = (e.clientY - 28) + 'px';
     }
 
+    function renderHourlyDistribution(hourly) {
+      var barsEl = document.getElementById('hourlyBars');
+      var labelsEl = document.getElementById('hourlyLabels');
+      if (!barsEl || !labelsEl) return;
+      var arr = Array.isArray(hourly) && hourly.length === 24 ? hourly : new Array(24).fill(0);
+      var max = 0;
+      for (var i = 0; i < 24; i++) {
+        if (arr[i] > max) max = arr[i];
+      }
+      var barsHtml = '';
+      var labelsHtml = '';
+      for (var h = 0; h < 24; h++) {
+        var val = Number(arr[h] || 0);
+        var pct = max > 0 ? Math.max(3, Math.round((val / max) * 100)) : 3;
+        var hStr = (h < 10 ? '0' : '') + h + ':00';
+        barsHtml += '<div class="hourly-col" title="' + hStr + ': ' + val + ' min">' +
+          '<div class="hourly-bar" data-hour="' + hStr + '" data-min="' + val + '" style="height: ' + pct + '%;"></div>' +
+          '</div>';
+        var labelText = (h % 3 === 0) ? (h < 10 ? '0' : '') + h : '';
+        labelsHtml += '<div class="hourly-label">' + labelText + '</div>';
+      }
+      barsEl.innerHTML = barsHtml;
+      labelsEl.innerHTML = labelsHtml;
+    }
+
+    function renderHourlyTooltip(e) {
+      var el = document.getElementById('calTooltip');
+      var target = e.target;
+      if (!target || !target.classList.contains('hourly-bar')) return;
+      var hStr = target.getAttribute('data-hour');
+      var val = target.getAttribute('data-min');
+      el.textContent = hStr + ': ' + val + ' min';
+      el.classList.add('visible');
+      el.style.left = (e.clientX + 12) + 'px';
+      el.style.top = (e.clientY - 28) + 'px';
+    }
+
     async function loadCalendarTab() {
-      const data = await jsonFetch('/web/stats/calendar');
+      var tzOffsetHours = Math.round(-new Date().getTimezoneOffset() / 60);
+      const data = await jsonFetch('/web/stats/calendar?tzOffset=' + tzOffsetHours);
+      var curStreak = Number(data.currentStreak || 0);
+      var longStreak = Number(data.longestStreak || 0);
+      var actDays = Number(data.activeDays !== undefined ? data.activeDays : (data.days || []).length);
+      var csEl = document.getElementById('habitCurrentStreak');
+      if (csEl) csEl.innerHTML = curStreak + ' <span style="font-size: 14px; font-weight: normal; color: var(--text-secondary);">' + I18N.daysUnit + '</span>';
+      var lsEl = document.getElementById('habitLongestStreak');
+      if (lsEl) lsEl.innerHTML = longStreak + ' <span style="font-size: 14px; font-weight: normal; color: var(--text-secondary);">' + I18N.daysUnit + '</span>';
+      var adEl = document.getElementById('habitActiveDays');
+      if (adEl) adEl.innerHTML = actDays + ' <span style="font-size: 14px; font-weight: normal; color: var(--text-secondary);">' + I18N.daysUnit + '</span>';
+
+      renderHourlyDistribution(data.hourlyDistribution);
       renderCalendar(data.days || [], data.years || []);
       loadMonthCalendar(new Date().getFullYear(), new Date().getMonth() + 1);
     }
@@ -1415,9 +1887,18 @@ export function renderUserPage(locale: Locale): string {
     async function loadReadingTab() {
       const page = Math.max(1, Number(document.getElementById('booksPage').value || 1));
       const pageSize = document.getElementById('booksPageSize').value === '100' ? 100 : 50;
+      const search = (document.getElementById('bookSearch')?.value || '').trim();
+      const status = document.getElementById('bookFilter')?.value || 'all';
+      const sort = document.getElementById('bookSort')?.value || 'last_open';
+
+      let queryParams = '?page=' + page + '&pageSize=' + pageSize;
+      if (search) queryParams += '&search=' + encodeURIComponent(search);
+      if (status && status !== 'all') queryParams += '&status=' + encodeURIComponent(status);
+      if (sort) queryParams += '&sort=' + encodeURIComponent(sort);
+
       const [stats, books] = await Promise.all([
         jsonFetch('/web/stats'),
-        jsonFetch('/web/statistics/books?page=' + page + '&pageSize=' + pageSize),
+        jsonFetch('/web/statistics/books' + queryParams),
       ]);
       renderReadingStats(stats.readingStatistics || {});
       renderBooks(books.items || [], books.page || page, books.pageSize || pageSize, books.total || 0);
@@ -1504,11 +1985,52 @@ export function renderUserPage(locale: Locale): string {
       try { await activateTab(currentTab, true); } catch {}
     });
 
+    let bookSearchTimer = null;
+    document.getElementById('bookSearch')?.addEventListener('input', () => {
+      clearTimeout(bookSearchTimer);
+      bookSearchTimer = setTimeout(async () => {
+        if (currentTab !== 'reading') return;
+        document.getElementById('booksPage').value = '1';
+        try { await loadReadingTab(); } catch {}
+      }, 250);
+    });
+
+    document.getElementById('bookFilter')?.addEventListener('change', async () => {
+      if (currentTab !== 'reading') return;
+      document.getElementById('booksPage').value = '1';
+      try { await loadReadingTab(); } catch {}
+    });
+
+    document.getElementById('bookSort')?.addEventListener('change', async () => {
+      if (currentTab !== 'reading') return;
+      document.getElementById('booksPage').value = '1';
+      try { await loadReadingTab(); } catch {}
+    });
+
     document.getElementById('loadBooksBtn').addEventListener('click', async () => {
       try {
         await loadReadingTab();
         tabLoaded.reading = true;
       } catch {}
+    });
+
+    document.getElementById('booksBody')?.addEventListener('click', (e) => {
+      const target = e.target.closest('.open-book-detail');
+      if (target && target.dataset.md5) {
+        showBookDetail(target.dataset.md5);
+      }
+    });
+
+    document.getElementById('closeBookDetailBtn')?.addEventListener('click', closeBookDetailModal);
+    document.getElementById('bookDetailModal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'bookDetailModal') {
+        closeBookDetailModal();
+      }
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeBookDetailModal();
+      }
     });
 
     const dateFmtEl = document.getElementById('dateFmtSelect');
@@ -1520,6 +2042,16 @@ export function renderUserPage(locale: Locale): string {
     document.getElementById('calContainer').addEventListener('mouseover', renderCalendarTooltip);
     document.getElementById('calContainer').addEventListener('mousemove', renderCalendarTooltip);
     document.getElementById('calContainer').addEventListener('mouseout', renderCalendarTooltip);
+
+    var hourlyBarsEl = document.getElementById('hourlyBars');
+    if (hourlyBarsEl) {
+      hourlyBarsEl.addEventListener('mouseover', renderHourlyTooltip);
+      hourlyBarsEl.addEventListener('mousemove', renderHourlyTooltip);
+      hourlyBarsEl.addEventListener('mouseout', function() {
+        var el = document.getElementById('calTooltip');
+        if (el) el.classList.remove('visible');
+      });
+    }
     document.getElementById('calYearSelect').addEventListener('change', async function() {
       try { await loadCalendarTab(); } catch {}
     });

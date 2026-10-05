@@ -250,6 +250,269 @@ export function mergeSnapshots(
   };
 }
 
+export interface ReadingStreaks {
+  currentStreak: number;
+  longestStreak: number;
+  activeDays: number;
+}
+
+export function computeReadingStreaks(
+  daily: Record<string, number> | string[],
+  todayRef?: string | Date
+): ReadingStreaks {
+  // Support both Record<string, number> and string[]
+  let activeDates: string[];
+  if (Array.isArray(daily)) {
+    activeDates = daily.slice().sort();
+  } else {
+    activeDates = Object.entries(daily)
+      .filter(([_, mins]) => Number(mins) > 0)
+      .map(([date]) => date)
+      .sort();
+  }
+
+  const activeDays = activeDates.length;
+  if (activeDays === 0) {
+    return { currentStreak: 0, longestStreak: 0, activeDays: 0 };
+  }
+
+  // Helper to parse "YYYY-MM-DD" to UTC day timestamp (in integer days)
+  const parseDayNumber = (dStr: string): number => {
+    const [y, m, d] = dStr.split("-").map(Number);
+    return Math.round(Date.UTC(y, m - 1, d) / 86400000);
+  };
+
+  const dayNumbers = Array.from(new Set(activeDates.map(parseDayNumber))).sort((a, b) => a - b);
+
+  let longestStreak = 0;
+  let currentRun = 0;
+  let prevDay: number | null = null;
+
+  for (const day of dayNumbers) {
+    if (prevDay === null || day === prevDay + 1) {
+      currentRun++;
+    } else {
+      currentRun = 1;
+    }
+    if (currentRun > longestStreak) {
+      longestStreak = currentRun;
+    }
+    prevDay = day;
+  }
+
+  // Calculate current streak
+  // Reference date: default to today in UTC or provided date/string
+  let targetDayNumber: number;
+  if (todayRef instanceof Date) {
+    targetDayNumber = Math.round(
+      Date.UTC(todayRef.getUTCFullYear(), todayRef.getUTCMonth(), todayRef.getUTCDate()) / 86400000
+    );
+  } else if (typeof todayRef === "string") {
+    targetDayNumber = parseDayNumber(todayRef);
+  } else {
+    const now = new Date();
+    targetDayNumber = Math.round(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) / 86400000
+    );
+  }
+
+  const activeDaySet = new Set(dayNumbers);
+  let currentStreak = 0;
+
+  if (activeDaySet.has(targetDayNumber)) {
+    // Today is active: count backwards from today
+    let checkDay = targetDayNumber;
+    while (activeDaySet.has(checkDay)) {
+      currentStreak++;
+      checkDay--;
+    }
+  } else if (activeDaySet.has(targetDayNumber - 1)) {
+    // Today is not active, but yesterday was active: count backwards from yesterday
+    let checkDay = targetDayNumber - 1;
+    while (activeDaySet.has(checkDay)) {
+      currentStreak++;
+      checkDay--;
+    }
+  } else {
+    currentStreak = 0;
+  }
+
+  return { currentStreak, longestStreak, activeDays };
+}
+
+export function computeHourlyDistribution(
+  summary: StatisticsSummary | null | undefined,
+  tzOffsetHours: number = 0
+): number[] {
+  const distribution = new Array<number>(24).fill(0);
+  if (!summary || !summary.books) return distribution;
+
+  const offset = Number.isFinite(tzOffsetHours) ? Math.round(tzOffsetHours) : 0;
+
+  for (const book of Object.values(summary.books)) {
+    if (!book.days) continue;
+    for (const hours of Object.values(book.days)) {
+      for (const [hourKey, mins] of Object.entries(hours)) {
+        const hour = Number(hourKey);
+        if (Number.isInteger(hour) && hour >= 0 && hour < 24) {
+          const shiftedHour = (((hour + offset) % 24) + 24) % 24;
+          distribution[shiftedHour] += Number(mins) || 0;
+        }
+      }
+    }
+  }
+
+  return distribution;
+}
+
+export interface BookDailyReadingHistory {
+  date: string; // YYYY-MM-DD
+  minutes: number;
+  seconds: number;
+  pages: number;
+}
+
+export interface BookRecentReadingSession {
+  start_time: number;
+  startTime: number;
+  duration: number; // in seconds
+  page: number | null;
+  total_pages: number;
+  totalPages: number;
+}
+
+export interface BookTrajectoryDetail {
+  md5: string;
+  title: string;
+  authors: string;
+  series: string;
+  language: string;
+  pages: number;
+  total_read_pages: number;
+  totalReadPages: number;
+  total_read_time: number;
+  totalReadTime: number;
+  notes: number;
+  highlights: number;
+  last_open: number;
+  lastOpen: number;
+  progress: number; // percentage 0 - 100
+  reading_speed: {
+    seconds_per_page: number | null;
+    secondsPerPage: number | null;
+    pages_per_hour: number | null;
+    pagesPerHour: number | null;
+  };
+  readingSpeed: {
+    seconds_per_page: number | null;
+    secondsPerPage: number | null;
+    pages_per_hour: number | null;
+    pagesPerHour: number | null;
+  };
+  daily_history: BookDailyReadingHistory[];
+  dailyHistory: BookDailyReadingHistory[];
+  recent_sessions: BookRecentReadingSession[];
+  recentSessions: BookRecentReadingSession[];
+}
+
+export function computeBookTrajectory(book: StatisticsBookRow): BookTrajectoryDetail {
+  const pageStats = Array.isArray(book.page_stat_data) ? book.page_stat_data : [];
+
+  const dailyMap: Record<string, { seconds: number; pages: Set<number> }> = {};
+  const sessions: BookRecentReadingSession[] = [];
+
+  for (const stat of pageStats) {
+    const startTime = Number(stat.start_time);
+    const duration = Number(stat.duration);
+    if (!Number.isFinite(startTime) || !Number.isFinite(duration) || duration <= 0) continue;
+
+    const page = stat.page == null || !Number.isFinite(Number(stat.page)) ? null : Number(stat.page);
+    const totalPages = Number(stat.total_pages) || Number(book.pages) || 0;
+
+    sessions.push({
+      start_time: startTime,
+      startTime,
+      duration,
+      page,
+      total_pages: totalPages,
+      totalPages,
+    });
+
+    const d = new Date(startTime * 1000);
+    const dateKey =
+      d.getFullYear() +
+      "-" +
+      String(d.getMonth() + 1).padStart(2, "0") +
+      "-" +
+      String(d.getDate()).padStart(2, "0");
+
+    if (!dailyMap[dateKey]) {
+      dailyMap[dateKey] = { seconds: 0, pages: new Set() };
+    }
+    dailyMap[dateKey].seconds += duration;
+    if (page !== null) {
+      dailyMap[dateKey].pages.add(page);
+    }
+  }
+
+  // Sort sessions descending by start_time
+  sessions.sort((a, b) => b.start_time - a.start_time);
+
+  const dailyHistory: BookDailyReadingHistory[] = Object.entries(dailyMap)
+    .map(([date, data]) => ({
+      date,
+      minutes: Math.round(data.seconds / 60),
+      seconds: data.seconds,
+      pages: data.pages.size,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const totalReadPages = Number(book.total_read_pages) || 0;
+  const totalReadTime = Number(book.total_read_time) || 0;
+  const pages = Number(book.pages) || 0;
+  const progress = pages > 0 ? Math.min(100, Math.max(0, (totalReadPages / pages) * 100)) : 0;
+
+  const secondsPerPage =
+    totalReadPages > 0 && totalReadTime > 0
+      ? Math.round((totalReadTime / totalReadPages) * 10) / 10
+      : null;
+  const pagesPerHour =
+    totalReadTime > 0
+      ? Math.round((totalReadPages / (totalReadTime / 3600)) * 10) / 10
+      : null;
+
+  const speedObj = {
+    seconds_per_page: secondsPerPage,
+    secondsPerPage,
+    pages_per_hour: pagesPerHour,
+    pagesPerHour,
+  };
+
+  return {
+    md5: book.md5,
+    title: book.title || "",
+    authors: book.authors || "",
+    series: book.series || "",
+    language: book.language || "",
+    pages,
+    total_read_pages: totalReadPages,
+    totalReadPages,
+    total_read_time: totalReadTime,
+    totalReadTime,
+    notes: Number(book.notes) || 0,
+    highlights: Number(book.highlights) || 0,
+    last_open: Number(book.last_open) || 0,
+    lastOpen: Number(book.last_open) || 0,
+    progress: Math.round(progress * 100) / 100,
+    reading_speed: speedObj,
+    readingSpeed: speedObj,
+    daily_history: dailyHistory,
+    dailyHistory,
+    recent_sessions: sessions,
+    recentSessions: sessions,
+  };
+}
+
 export async function getStatisticsWithSummary(
   db: DatabaseAdapter,
   userId: number
