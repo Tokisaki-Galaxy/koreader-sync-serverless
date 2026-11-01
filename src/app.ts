@@ -3,6 +3,7 @@ import koreaderRoutes from "./routes/koreader";
 import userRoutes from "./routes/user";
 import adminRoutes from "./routes/admin";
 import assetRoutes from "./routes/assets";
+import mcpRoutes from "./routes/mcp";
 import { withSecurityHeaders } from "./services/common";
 import type { Env } from "./types";
 import type { AppEnv } from "./context";
@@ -21,6 +22,7 @@ export function createApp() {
   app.route("/", koreaderRoutes);
   app.route("/", userRoutes);
   app.route("/", adminRoutes);
+  app.route("/", mcpRoutes);
 
   app.get("/healthcheck", (c) => c.json({ state: "OK" }));
   app.get("/health", (c) => c.json({ status: "ok" }));

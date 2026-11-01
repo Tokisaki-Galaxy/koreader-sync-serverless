@@ -25,6 +25,14 @@ export function parseSessionRenewWindowHours(env: Env): number {
   return Number.isFinite(value) && value >= 0 ? value : parseSessionTtlHours(env) / 2;
 }
 
+// Bearer tokens for MCP clients live in the same sessions table as web sessions but
+// get their own lifetime, since a chat client should keep working for months.
+// Default is 90 days.
+export function parseMcpTokenTtlHours(env: Env): number {
+  const value = Number(env.MCP_TOKEN_TTL_HOURS ?? "2160");
+  return Number.isFinite(value) && value > 0 ? value : 2160;
+}
+
 export function parsePbkdf2Iterations(env: Env): number {
   const value = Number(env.PBKDF2_ITERATIONS ?? DEFAULT_PBKDF2_ITERATIONS);
   if (!Number.isFinite(value) || !Number.isInteger(value)) {

@@ -209,6 +209,78 @@ Notes:
 - `PUT /admin/users/:id/password` force reset user password
 - `GET /admin` admin dashboard page
 
+## MCP Server
+
+The Worker also exposes a read-only Model Context Protocol server, so chat clients
+can query reading progress and statistics with plain language.
+
+- Endpoint: `POST /mcp` (Streamable HTTP, stateless, JSON-RPC over POST with SSE responses)
+- Protocol: `2025-11-25`, negotiated during `initialize`. Older clients are still served through the SDK's supported version list.
+- Transport: HTTP POST, SSE responses. `GET /mcp` returns `405` because the server has no server-initiated messages, which the spec allows.
+- `Origin` headers that do not match the request origin are rejected with `403` unless listed in `MCP_ALLOWED_ORIGINS`.
+
+### Authentication
+
+Three forms are accepted:
+
+1. `Authorization: Bearer <token>` with a token minted by `POST /mcp/token` (recommended)
+2. `Authorization: Basic base64(username:password)` with the plain account password
+3. `x-auth-user` + `x-auth-key` (KOReader native, key is `md5(password)`)
+
+TLS encrypts headers in transit, so all three are safe against passive network
+reading. A bearer token is still preferable: it can be revoked on its own and does
+not put the account password into a client config file.
+
+Mint a token:
+
+```bash
+curl -X POST https://your-host/mcp/token \
+  -H "content-type: application/json" \
+  -d '{"username":"reader","password":"your-password"}'
+```
+
+Revoke the token used by the call with `DELETE /mcp/token`.
+
+### Tools
+
+| Tool | Purpose |
+| --- | --- |
+| `get_reading_overview` | Account-wide snapshot: documents, devices, total time, pages, streaks |
+| `list_books` | Search, filter, sort and page through the statistics book list |
+| `get_book_details` | One book's trajectory, daily history and recent sessions |
+| `get_document_progress` | Latest sync position for one document |
+| `list_progress_records` | Recent sync records, newest first |
+| `get_reading_activity` | Daily minutes, streaks and 24-hour distribution |
+| `get_month_activity` | Monthly breakdown per book |
+
+All tools are annotated `readOnlyHint: true`; nothing writes to the database.
+
+### Client configuration
+
+Bearer token, Streamable HTTP:
+
+```json
+{
+  "mcpServers": {
+    "koreader-sync": {
+      "type": "http",
+      "url": "https://your-host/mcp",
+      "headers": { "Authorization": "Bearer <token-from-/mcp/token>" }
+    }
+  }
+}
+```
+
+Claude Code:
+
+```bash
+claude mcp add --transport http koreader-sync https://your-host/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+If the client only supports URL configuration, use Basic auth in the URL:
+`https://user:password@your-host/mcp`.
+
 ## Local Development
 
 1. Install dependencies:
@@ -299,3 +371,5 @@ OPTIONAL environment variables:
 - `DEBUG`: optional (`"1"`/`"true"` enables debug error logs)
 - `PBKDF2_ITERATIONS`: optional number of iterations for PBKDF2 hashing, default `20000` (adjust based on your performance/security needs)
 - `ENABLE_USER_REGISTRATION`: optional (`"1"`/`"true"` to allow user self-registration, default is open registration)
+- `MCP_TOKEN_TTL_HOURS`: optional lifetime for MCP bearer tokens in hours, default `2160` (90 days)
+- `MCP_ALLOWED_ORIGINS`: optional comma-separated origin allowlist for cross-origin MCP calls, for example `https://claude.ai`
