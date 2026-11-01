@@ -291,11 +291,9 @@ keep every token on a fixed expiry.
 | `list_books` | Search, filter, sort and page through the statistics book list |
 | `get_recent_reading` | What was read in the last N days, per book |
 | `get_book_details` | One book's trajectory, daily history and recent sessions |
-| `get_document_progress` | Latest sync position for one document |
-| `list_progress_records` | Recent sync records, newest first |
+| `list_progress_records` | Sync records, newest first; exact lookup by `document` or `search` fragment |
 | `get_reading_activity` | Daily minutes, streaks and 24-hour distribution |
-| `get_month_activity` | Monthly breakdown per book |
-| `get_day_activity` | Single day breakdown per book with hour buckets |
+| `get_activity_breakdown` | Per-book breakdown for one day, or one month with per-day buckets |
 
 All tools are annotated `readOnlyHint: true`; nothing writes to the database.
 

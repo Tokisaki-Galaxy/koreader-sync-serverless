@@ -193,7 +193,7 @@ describe("MCP modern protocol 2026-07-28", () => {
     expect(listRes.status).toBe(200);
     const list = await listRes.json();
     expect(list.result.resultType).toBe("complete");
-    expect(list.result.tools).toHaveLength(9);
+    expect(list.result.tools).toHaveLength(7);
     expect(list.result.ttlMs).toBeTypeOf("number");
     expect(list.result.cacheScope).toMatch(/^(public|private)$/);
 
@@ -380,10 +380,8 @@ describe("MCP server", () => {
     const list = await readJsonRpcResponse(listRes);
     const names = list.result.tools.map((tool: { name: string }) => tool.name).sort();
     expect(names).toEqual([
+      "get_activity_breakdown",
       "get_book_details",
-      "get_day_activity",
-      "get_document_progress",
-      "get_month_activity",
       "get_reading_activity",
       "get_reading_overview",
       "get_recent_reading",
@@ -447,18 +445,31 @@ describe("MCP server", () => {
     const dayRes = await rpc(env, auth, {
       id: 2,
       method: "tools/call",
-      params: { name: "get_day_activity", arguments: { date } },
+      params: { name: "get_activity_breakdown", arguments: { date } },
     });
     const day = JSON.parse((await readJsonRpcResponse(dayRes)).result.content[0].text);
+    expect(day.scope).toBe("day");
     const book = day.books.find((item: { md5: string }) => item.md5 === "bbb");
     expect(book.minutes).toBe(30);
     expect(book.hours.length).toBeGreaterThan(0);
     expect(day.totalMinutes).toBeGreaterThanOrEqual(30);
 
-    const badRes = await rpc(env, auth, {
+    const monthRes = await rpc(env, auth, {
       id: 3,
       method: "tools/call",
-      params: { name: "get_day_activity", arguments: { date: "2026-02-30" } },
+      params: {
+        name: "get_activity_breakdown",
+        arguments: { year: Number(date.slice(0, 4)), month: Number(date.slice(5, 7)) },
+      },
+    });
+    const month = JSON.parse((await readJsonRpcResponse(monthRes)).result.content[0].text);
+    expect(month.scope).toBe("month");
+    expect(month.books.some((item: { md5: string }) => item.md5 === "bbb")).toBe(true);
+
+    const badRes = await rpc(env, auth, {
+      id: 4,
+      method: "tools/call",
+      params: { name: "get_activity_breakdown", arguments: { date: "2026-02-30" } },
     });
     const bad = await readJsonRpcResponse(badRes);
     expect(bad.result.isError).toBe(true);
@@ -550,20 +561,30 @@ describe("MCP server", () => {
     const progressRes = await rpc(env, auth, {
       id: 2,
       method: "tools/call",
-      params: { name: "get_document_progress", arguments: { document: "novels/book-a.epub" } },
+      params: { name: "list_progress_records", arguments: { document: "novels/book-a.epub" } },
     });
     const progress = JSON.parse((await readJsonRpcResponse(progressRes)).result.content[0].text);
-    expect(progress).toMatchObject({
+    expect(progress.found).toBe(true);
+    expect(progress.records[0]).toMatchObject({
       document: "novels/book-a.epub",
-      found: true,
       progress: "page:42",
       percentage: 42.5,
       device: "Kindle",
       deviceId: "k-1",
     });
+
+    const missingRes = await rpc(env, auth, {
+      id: 3,
+      method: "tools/call",
+      params: { name: "list_progress_records", arguments: { document: "missing.epub" } },
+    });
+    const missing = JSON.parse((await readJsonRpcResponse(missingRes)).result.content[0].text);
+    expect(missing.found).toBe(false);
+    expect(missing.records).toEqual([]);
   });
 
-  it("accepts Basic auth and rejects unsupported protocol versions", async () => {    const env = createMockEnv();
+  it("accepts Basic auth and rejects unsupported protocol versions", async () => {
+    const env = createMockEnv();
     await seedAccount(env);
     const basic = `Basic ${Buffer.from("reader:password", "utf8").toString("base64")}`;
 

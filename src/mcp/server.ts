@@ -460,48 +460,19 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
   );
 
   server.registerTool(
-    "get_document_progress",
+    "list_progress_records",
     {
-      title: "Document sync progress",
+      title: "Sync records",
       description:
-        "Get the latest sync position for one document, including the raw KOReader progress " +
-        "string, percentage, device and timestamp. Useful for answering where the user stopped " +
-        "in a specific file.",
+        "List the most recently synced document positions, newest first. Pass `document` for an " +
+        "exact lookup of where a specific file stopped, or `search` to match a path fragment.",
       annotations: READ_ONLY_ANNOTATIONS,
       inputSchema: z.object({
         document: z
           .string()
           .min(1)
-          .describe("Document identifier exactly as stored, usually the file path or a hash"),
-      }),
-    },
-    async ({ document }) => {
-      const row = await getLatestProgressByDocument(db, user.userId, document);
-      if (!row) {
-        return textResult({ document, found: false, progress: null });
-      }
-      return textResult({
-        document,
-        found: true,
-        progress: row.progress,
-        percentage: row.percentage,
-        device: row.device,
-        deviceId: row.device_id || null,
-        timestamp: row.timestamp,
-        timestampIso: toIsoOrNull(row.timestamp),
-      });
-    }
-  );
-
-  server.registerTool(
-    "list_progress_records",
-    {
-      title: "List sync records",
-      description:
-        "List the most recently synced document positions, newest first. Filter with `search` " +
-        "to match a document path fragment.",
-      annotations: READ_ONLY_ANNOTATIONS,
-      inputSchema: z.object({
+          .optional()
+          .describe("Exact document identifier, usually the file path or a hash"),
         search: z.string().optional().describe("Case-insensitive fragment of the document id"),
         limit: z.number().int().min(1).max(100).optional().describe("Page size, default 20"),
         offset: z.number().int().min(0).optional().describe("Records to skip, default 0"),
@@ -510,7 +481,35 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
     async (args) => {
       const limit = args.limit ?? 20;
       const offset = args.offset ?? 0;
-      const fetchSize = args.search ? Math.min(1000, offset + limit * 10) : limit;
+      const mapRow = (
+        row: {
+          document?: string;
+          progress: string;
+          percentage: number;
+          device: string;
+          device_id: string;
+          timestamp: number;
+        },
+        document: string = row.document ?? ""
+      ) => ({
+        document,
+        progress: row.progress,
+        percentage: row.percentage,
+        device: row.device,
+        deviceId: row.device_id || null,
+        timestamp: row.timestamp,
+        timestampIso: toIsoOrNull(row.timestamp),
+      });
+
+      if (args.document) {
+        const row = await getLatestProgressByDocument(db, user.userId, args.document);
+        return textResult({
+          document: args.document,
+          found: Boolean(row),
+          returned: row ? 1 : 0,
+          records: row ? [mapRow(row, args.document)] : [],
+        });
+      }
 
       if (!args.search) {
         const rows = await listProgressRecordsByUser(db, user.userId, limit, offset);
@@ -518,19 +517,12 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
           offset,
           limit,
           returned: rows.length,
-          records: rows.map((row) => ({
-            document: row.document,
-            progress: row.progress,
-            percentage: row.percentage,
-            device: row.device,
-            deviceId: row.device_id || null,
-            timestamp: row.timestamp,
-            timestampIso: toIsoOrNull(row.timestamp),
-          })),
+          records: rows.map((row) => mapRow(row)),
         });
       }
 
       const needle = args.search.trim().toLowerCase();
+      const fetchSize = Math.min(1000, offset + limit * 10);
       const rows = await listProgressRecordsByUser(db, user.userId, fetchSize, 0);
       const matched = rows.filter((row) => row.document.toLowerCase().includes(needle));
       const page = matched.slice(offset, offset + limit);
@@ -539,15 +531,7 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
         limit,
         totalMatched: matched.length,
         returned: page.length,
-        records: page.map((row) => ({
-          document: row.document,
-          progress: row.progress,
-          percentage: row.percentage,
-          device: row.device,
-          deviceId: row.device_id || null,
-          timestamp: row.timestamp,
-          timestampIso: toIsoOrNull(row.timestamp),
-        })),
+        records: page.map((row) => mapRow(row)),
       });
     }
   );
@@ -623,22 +607,66 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
   );
 
   server.registerTool(
-    "get_month_activity",
+    "get_activity_breakdown",
     {
-      title: "Monthly reading breakdown",
+      title: "Activity breakdown",
       description:
-        "Break a single month's reading down by book, with each book's minutes and per-day " +
-        "hour buckets for that month.",
+        "Break reading down by book for one day or one month. Pass `date` for a single day with " +
+        "hour buckets, or pass `year` and `month` for the month with per-day buckets. When both " +
+        "are present `date` wins.",
       annotations: READ_ONLY_ANNOTATIONS,
       inputSchema: z.object({
-        year: z.number().int().min(1970).max(9999).describe("Four digit year"),
-        month: z.number().int().min(1).max(12).describe("Month number, 1 to 12"),
+        date: z
+          .string()
+          .optional()
+          .describe("Day in YYYY-MM-DD format, used for a single-day breakdown"),
+        year: z.number().int().min(1970).max(9999).optional().describe("Four digit year, used with month"),
+        month: z.number().int().min(1).max(12).optional().describe("Month number 1 to 12, used with year"),
       }),
     },
-    async ({ year, month }) => {
+    async ({ date, year, month }) => {
+      if (date === undefined && (year === undefined || month === undefined)) {
+        return errorResult("Pass `date` for one day, or both `year` and `month` for a month.");
+      }
+      if (date !== undefined && !isValidDateKey(date)) {
+        return errorResult(`"${date}" is not a valid YYYY-MM-DD date.`);
+      }
+
       const { found, summary } = await loadSummary(db, user.userId);
       if (!found || !summary) {
         return errorResult("No reading statistics have been synced for this account yet.");
+      }
+
+      if (date !== undefined) {
+        const books: Array<{
+          md5: string;
+          title: string;
+          authors: string;
+          minutes: number;
+          hours: Array<{ hour: number; minutes: number }>;
+        }> = [];
+        let totalMinutes = 0;
+
+        for (const book of Object.values(summary.books)) {
+          const buckets = book.days?.[date];
+          if (!buckets) continue;
+          const minutes = sumHourBuckets(buckets);
+          if (minutes <= 0) continue;
+          totalMinutes += minutes;
+          books.push({
+            md5: book.md5,
+            title: book.title,
+            authors: book.authors,
+            minutes,
+            hours: Object.entries(buckets)
+              .map(([hour, value]) => ({ hour: Number(hour), minutes: Number(value) || 0 }))
+              .filter((entry) => entry.minutes > 0)
+              .sort((a, b) => a.hour - b.hour),
+          });
+        }
+
+        books.sort((a, b) => b.minutes - a.minutes);
+        return textResult({ scope: "day", date, totalMinutes, returned: books.length, books });
       }
 
       const monthPrefix = `${year}-${String(month).padStart(2, "0")}-`;
@@ -665,62 +693,7 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
       }
 
       books.sort((a, b) => b.minutes - a.minutes);
-      return textResult({ year, month, totalMinutes, books });
-    }
-  );
-
-  server.registerTool(
-    "get_day_activity",
-    {
-      title: "Single day reading",
-      description:
-        "Get everything read on one calendar day: total minutes plus each book's minutes " +
-        "and hour buckets. Cheaper than pulling a whole month when the question is about " +
-        "one date.",
-      annotations: READ_ONLY_ANNOTATIONS,
-      inputSchema: z.object({
-        date: z.string().describe("Day in YYYY-MM-DD format, for example 2026-07-28"),
-      }),
-    },
-    async ({ date }) => {
-      if (!isValidDateKey(date)) {
-        return errorResult(`"${date}" is not a valid YYYY-MM-DD date.`);
-      }
-
-      const { found, summary } = await loadSummary(db, user.userId);
-      if (!found || !summary) {
-        return errorResult("No reading statistics have been synced for this account yet.");
-      }
-
-      const books: Array<{
-        md5: string;
-        title: string;
-        authors: string;
-        minutes: number;
-        hours: Array<{ hour: number; minutes: number }>;
-      }> = [];
-      let totalMinutes = 0;
-
-      for (const book of Object.values(summary.books)) {
-        const buckets = book.days?.[date];
-        if (!buckets) continue;
-        const minutes = sumHourBuckets(buckets);
-        if (minutes <= 0) continue;
-        totalMinutes += minutes;
-        books.push({
-          md5: book.md5,
-          title: book.title,
-          authors: book.authors,
-          minutes,
-          hours: Object.entries(buckets)
-            .map(([hour, value]) => ({ hour: Number(hour), minutes: Number(value) || 0 }))
-            .filter((entry) => entry.minutes > 0)
-            .sort((a, b) => a.hour - b.hour),
-        });
-      }
-
-      books.sort((a, b) => b.minutes - a.minutes);
-      return textResult({ date, totalMinutes, returned: books.length, books });
+      return textResult({ scope: "month", year, month, totalMinutes, returned: books.length, books });
     }
   );
 
