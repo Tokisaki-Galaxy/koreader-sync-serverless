@@ -293,6 +293,61 @@ describe("MCP server", () => {
     expect(afterRevoke.status).toBe(401);
   });
 
+  it("slides the bearer expiry forward while the token stays in use", async () => {
+    const env = createMockEnv();
+    await seedAccount(env);
+
+    const login = await app.request(
+      "/mcp/token",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "reader", password: "password" }),
+      },
+      env
+    );
+    const { access_token: token } = await login.json();
+    const tokenHash = await sha256(`${token}:${env.PASSWORD_PEPPER}`);
+
+    const nearExpiry = Math.floor(Date.now() / 1000) + 60;
+    await env.DB.prepare("UPDATE sessions SET expires_at = ? WHERE token_hash = ?")
+      .bind(nearExpiry, tokenHash)
+      .run();
+
+    const res = await rpc(env, { authorization: `Bearer ${token}` }, { id: 1, method: "tools/list", params: {} });
+    expect(res.status).toBe(200);
+
+    const renewed = readSessionExpiry(env, tokenHash);
+    expect(renewed).toBeGreaterThan(nearExpiry + 3600);
+  });
+
+  it("leaves expiry untouched when renewal is disabled", async () => {
+    const env = { ...createMockEnv(), MCP_TOKEN_RENEW_WINDOW_HOURS: "0" };
+    await seedAccount(env);
+
+    const login = await app.request(
+      "/mcp/token",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "reader", password: "password" }),
+      },
+      env
+    );
+    const { access_token: token } = await login.json();
+    const tokenHash = await sha256(`${token}:${env.PASSWORD_PEPPER}`);
+
+    const nearExpiry = Math.floor(Date.now() / 1000) + 60;
+    await env.DB.prepare("UPDATE sessions SET expires_at = ? WHERE token_hash = ?")
+      .bind(nearExpiry, tokenHash)
+      .run();
+
+    const res = await rpc(env, { authorization: `Bearer ${token}` }, { id: 1, method: "tools/list", params: {} });
+    expect(res.status).toBe(200);
+
+    expect(readSessionExpiry(env, tokenHash)).toBe(nearExpiry);
+  });
+
   it("negotiates protocol version 2025-11-25 and lists read-only tools", async () => {
     const env = createMockEnv();
     const auth = await seedAccount(env);
@@ -397,8 +452,7 @@ describe("MCP server", () => {
     });
   });
 
-  it("accepts Basic auth and rejects unsupported protocol versions", async () => {
-    const env = createMockEnv();
+  it("accepts Basic auth and rejects unsupported protocol versions", async () => {    const env = createMockEnv();
     await seedAccount(env);
     const basic = `Basic ${Buffer.from("reader:password", "utf8").toString("base64")}`;
 

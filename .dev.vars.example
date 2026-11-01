@@ -4,5 +4,7 @@ SESSION_TTL_HOURS=168
 ADMIN_TOKEN=please_set_a_strong_admin_token
 # MCP bearer token lifetime in hours, default 2160 (90 days)
 # MCP_TOKEN_TTL_HOURS=2160
+# Renewal window defaults to half the TTL; set 0 to disable sliding renewal.
+# MCP_TOKEN_RENEW_WINDOW_HOURS=1080
 # Comma-separated origin allowlist for cross-origin MCP calls
 # MCP_ALLOWED_ORIGINS=https://claude.ai

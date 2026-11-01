@@ -11,6 +11,7 @@ export interface Env {
   ADMIN_TOKEN?: string;
   ENABLE_USER_REGISTRATION?: string;
   MCP_TOKEN_TTL_HOURS?: string;
+  MCP_TOKEN_RENEW_WINDOW_HOURS?: string;
   MCP_ALLOWED_ORIGINS?: string;
 }
 

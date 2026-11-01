@@ -242,6 +242,11 @@ curl -X POST https://your-host/mcp/token \
 
 Revoke the token used by the call with `DELETE /mcp/token`.
 
+Tokens slide forward: when a bearer token is used inside its renewal window it is
+extended back to a full TTL, so a client that keeps calling never expires. Only
+idle tokens lapse. Set `MCP_TOKEN_RENEW_WINDOW_HOURS=0` to disable renewal and
+keep every token on a fixed expiry.
+
 ### Tools
 
 | Tool | Purpose |
@@ -373,4 +378,5 @@ OPTIONAL environment variables:
 - `PBKDF2_ITERATIONS`: optional number of iterations for PBKDF2 hashing, default `20000` (adjust based on your performance/security needs)
 - `ENABLE_USER_REGISTRATION`: optional (`"1"`/`"true"` to allow user self-registration, default is open registration)
 - `MCP_TOKEN_TTL_HOURS`: optional lifetime for MCP bearer tokens in hours, default `2160` (90 days)
+- `MCP_TOKEN_RENEW_WINDOW_HOURS`: optional renewal window for MCP bearer tokens in hours, default is half of `MCP_TOKEN_TTL_HOURS`. A token used inside this window is extended back to a full TTL, so only idle tokens expire. Set `0` to disable renewal.
 - `MCP_ALLOWED_ORIGINS`: optional comma-separated origin allowlist for cross-origin MCP calls, for example `https://claude.ai`

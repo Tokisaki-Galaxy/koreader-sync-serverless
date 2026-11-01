@@ -1,9 +1,11 @@
 import { md5 } from "js-md5";
-import { findUserByUsername, findWebUserBySessionTokenHash } from "../db";
+import { findUserByUsername, findWebUserBySessionTokenHash, renewSession } from "../db";
 import { sha256, verifyPassword } from "../crypto";
 import { isValidField, isValidKeyField } from "../services/auth";
-import { parsePbkdf2Iterations } from "../services/common";
+import { parseMcpTokenRenewWindowHours, parseMcpTokenTtlHours, parsePbkdf2Iterations } from "../services/common";
 import type { AppContext } from "../context";
+import type { DatabaseAdapter } from "../database/adapter";
+import type { Env } from "../types";
 
 export type McpAuthMethod = "bearer" | "basic" | "koreader";
 
@@ -38,6 +40,31 @@ async function verifyCredentials(
     parsePbkdf2Iterations(c.env)
   );
   return ok ? { userId: user.id, username: user.username, method } : null;
+}
+
+// Sliding expiry for bearer tokens. Used tokens are extended back to a full TTL
+// once they enter the renewal window, so only idle integrations lapse. A failed
+// renewal write must never fail the request that triggered it.
+async function maybeRenewMcpToken(
+  env: Env,
+  db: DatabaseAdapter,
+  tokenHash: string,
+  currentExpiresAt: number
+): Promise<void> {
+  const windowHours = parseMcpTokenRenewWindowHours(env);
+  if (windowHours <= 0) return;
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (currentExpiresAt > nowSeconds + windowHours * 3600) return;
+
+  const nextExpiresAt = nowSeconds + parseMcpTokenTtlHours(env) * 3600;
+  if (nextExpiresAt <= currentExpiresAt) return;
+
+  try {
+    await renewSession(db, tokenHash, nextExpiresAt);
+  } catch {
+    // Best effort: the old expiry still applies.
+  }
 }
 
 /**
@@ -78,6 +105,7 @@ export async function authenticateMcpRequest(c: AppContext): Promise<McpIdentity
     const tokenHash = await sha256(`${credentials}:${c.env.PASSWORD_PEPPER}`);
     const row = await findWebUserBySessionTokenHash(c.get("db"), tokenHash);
     if (!row) return null;
+    await maybeRenewMcpToken(c.env, c.get("db"), tokenHash, row.expires_at);
     return { userId: row.id, username: row.username, method: "bearer" };
   }
 
