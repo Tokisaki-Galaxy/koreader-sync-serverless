@@ -199,6 +199,35 @@ class MockD1Database {
       };
     }
 
+    if (q.includes("lower(document) like ?")) {
+      const userId = Number(bound[0]);
+      const pattern = String(bound[1] ?? "");
+      const needle = pattern
+        .replace(/^%|%$/g, "")
+        .replace(/\\([\\%_])/g, "$1")
+        .toLowerCase();
+      const rows = this.progress
+        .filter((p) => p.user_id === userId && p.document.toLowerCase().includes(needle))
+        .sort((a, b) => b.timestamp - a.timestamp);
+
+      if (q.includes("count(*) as total")) {
+        return { total: rows.length };
+      }
+
+      const limit = Number(bound[2]);
+      const offset = Number(bound[3]);
+      return rows
+        .slice(offset, offset + limit)
+        .map(({ document, progress, percentage, device, device_id, timestamp }) => ({
+          document,
+          progress,
+          percentage,
+          device,
+          device_id,
+          timestamp,
+        }));
+    }
+
     if (q.includes("select document, progress, percentage, device, device_id, timestamp, updated_at") && q.includes("from progress") && q.includes("where user_id = ?")) {
       const userId = Number(bound[0]);
       return this.progress

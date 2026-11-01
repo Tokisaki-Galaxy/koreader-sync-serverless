@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { createMcpServer } from "../mcp/server";
 import { authenticateMcpRequest } from "../mcp/auth";
@@ -48,6 +49,41 @@ function withCors(response: Response, cors: Headers): Response {
   return response;
 }
 
+// Best-effort fixed-window limiter for token minting. It is per isolate, so it
+// blunts brute force without pretending to be a distributed rate limiter.
+const TOKEN_RATE_LIMIT = 10;
+const TOKEN_RATE_WINDOW_MS = 60_000;
+const tokenAttempts = new Map<string, { count: number; resetAt: number }>();
+
+function clientAddress(c: Context<AppEnv>): string {
+  const forwarded = c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
+  return c.req.header("cf-connecting-ip") ?? (forwarded || "unknown");
+}
+
+function consumeTokenAttempt(key: string): { ok: boolean; retryAfter: number } {
+  const now = Date.now();
+  if (tokenAttempts.size > 500) {
+    for (const [entryKey, entry] of tokenAttempts) {
+      if (entry.resetAt <= now) tokenAttempts.delete(entryKey);
+    }
+  }
+
+  const existing = tokenAttempts.get(key);
+  if (!existing || existing.resetAt <= now) {
+    tokenAttempts.set(key, { count: 1, resetAt: now + TOKEN_RATE_WINDOW_MS });
+    return { ok: true, retryAfter: 0 };
+  }
+  if (existing.count >= TOKEN_RATE_LIMIT) {
+    return { ok: false, retryAfter: Math.max(1, Math.ceil((existing.resetAt - now) / 1000)) };
+  }
+  existing.count += 1;
+  return { ok: true, retryAfter: 0 };
+}
+
+function resetTokenAttempts(key: string): void {
+  tokenAttempts.delete(key);
+}
+
 // Mints a long-lived bearer token from the account password. The token is stored
 // hashed in the existing sessions table, so it can be revoked without touching the
 // password and never exposes the credential to the client configuration afterwards.
@@ -61,6 +97,14 @@ router.post("/mcp/token", async (c) => {
 
   const username = (body.username ?? "").trim();
   const password = body.password ?? "";
+  const rateKey = `${clientAddress(c)}|${username.toLowerCase()}`;
+  const limit = consumeTokenAttempt(rateKey);
+  if (!limit.ok) {
+    return c.json({ error: "Too many attempts", retry_after: limit.retryAfter }, 429, {
+      "retry-after": String(limit.retryAfter),
+    });
+  }
+
   if (!isValidKeyField(username) || !isValidField(password)) {
     return c.json({ error: "Invalid credentials" }, 401);
   }
@@ -81,6 +125,8 @@ router.post("/mcp/token", async (c) => {
   const expiresAt = Math.floor(Date.now() / 1000) + ttlSeconds;
   const token = generateSessionToken();
   await createSession(c.get("db"), user.id, await sha256(`${token}:${c.env.PASSWORD_PEPPER}`), expiresAt);
+
+  resetTokenAttempts(rateKey);
 
   return c.json(
     {
@@ -110,7 +156,7 @@ router.all("/mcp", async (c) => {
   const requestOrigin = new URL(c.req.url).origin;
   const allowedOrigins = parseAllowedOrigins(c.env.MCP_ALLOWED_ORIGINS);
 
-  // Spec 2025-11-25: reject unexpected Origin values with 403 to block DNS rebinding.
+  // Spec 2026-07-28 still rejects unexpected Origin values with 403 to block DNS rebinding.
   if (origin && origin !== requestOrigin && !allowedOrigins.includes(origin)) {
     return c.json({ error: "Forbidden origin" }, 403);
   }

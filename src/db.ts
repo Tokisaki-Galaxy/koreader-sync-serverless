@@ -341,6 +341,55 @@ export async function listProgressRecordsByUser(
   return results ?? [];
 }
 
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+function likeParam(value: string): string {
+  return `%${escapeLikePattern(value.toLowerCase())}%`;
+}
+
+export async function listProgressRecordsByUserSearch(
+  db: DatabaseAdapter,
+  userId: number,
+  search: string,
+  pageSize: number,
+  offset: number
+): Promise<Array<{ document: string; progress: string; percentage: number; device: string; device_id: string; timestamp: number }>> {
+  const { results } = await db.prepare(
+    `SELECT document, progress, percentage, device, device_id, timestamp
+     FROM progress
+     WHERE user_id = ? AND lower(document) LIKE ? ESCAPE '\\'
+     ORDER BY timestamp DESC
+     LIMIT ? OFFSET ?`
+  )
+    .bind(userId, likeParam(search), pageSize, offset)
+    .all<{
+      document: string;
+      progress: string;
+      percentage: number;
+      device: string;
+      device_id: string;
+      timestamp: number;
+    }>();
+  return results ?? [];
+}
+
+export async function countProgressRecordsByUserSearch(
+  db: DatabaseAdapter,
+  userId: number,
+  search: string
+): Promise<number> {
+  const row = await db.prepare(
+    `SELECT COUNT(*) AS total
+     FROM progress
+     WHERE user_id = ? AND lower(document) LIKE ? ESCAPE '\\'`
+  )
+    .bind(userId, likeParam(search))
+    .first<{ total: number }>();
+  return Number(row?.total ?? 0);
+}
+
 export async function listAllProgressByUser(
   db: DatabaseAdapter,
   userId: number

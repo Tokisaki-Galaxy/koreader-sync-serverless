@@ -1,11 +1,13 @@
 import * as z from "zod";
 import { McpServer } from "@modelcontextprotocol/server";
 import {
+  countProgressRecordsByUserSearch,
   getLatestProgressByDocument,
   getProgressSummaryByUser,
   getStatisticsSnapshot,
   listDeviceUsageByUser,
   listProgressRecordsByUser,
+  listProgressRecordsByUserSearch,
 } from "../db";
 import {
   computeBookTrajectory,
@@ -37,20 +39,36 @@ const READ_ONLY_ANNOTATIONS = {
   openWorldHint: false,
 } as const;
 
+type ToolErrorCode = "invalid_argument" | "not_found" | "internal";
+
 type ToolResult = {
   content: Array<{ type: "text"; text: string }>;
+  structuredContent?: Record<string, unknown>;
   isError?: boolean;
 };
 
-function textResult(payload: unknown): ToolResult {
+const anyObject = z.record(z.string(), z.unknown());
+
+function textResult<T extends Record<string, unknown>>(payload: T): ToolResult {
   return {
-    content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+    content: [{ type: "text", text: JSON.stringify(payload) }],
+    structuredContent: payload,
   };
 }
 
-function errorResult(message: string, extra?: unknown): ToolResult {
-  const text = extra === undefined ? message : `${message}\n\n${JSON.stringify(extra, null, 2)}`;
-  return { content: [{ type: "text", text }], isError: true };
+function toolError(code: ToolErrorCode, message: string, details?: unknown): ToolResult {
+  const payload = {
+    error: { code, message, ...(details === undefined ? {} : { details }) },
+  };
+  return { content: [{ type: "text", text: JSON.stringify(payload) }], isError: true };
+}
+
+function serverTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
 }
 
 function toIsoOrNull(seconds: number | null | undefined): string | null {
@@ -124,16 +142,21 @@ function sumBookMinutesForMonth(book: StatisticsBookSummary, monthPrefix: string
   return { minutes, days };
 }
 
-// Statistics date keys come from the device that recorded the session, so they
-// are compared as plain YYYY-MM-DD strings. Window boundaries use UTC, matching
-// the streak calculation.
+// Statistics date keys come from the server's local date at sync time, so the
+// MCP window boundaries must use the same calendar. On Cloudflare Workers this
+// is UTC; on a Node host it follows the host timezone.
+function serverDateKey(timestampMs: number = Date.now()): string {
+  const date = new Date(timestampMs);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function utcDateKey(timestampMs: number = Date.now()): string {
   const date = new Date(timestampMs);
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 }
 
 function dateKeyDaysAgo(days: number): string {
-  return utcDateKey(Date.now() - (days - 1) * 86400000);
+  return serverDateKey(Date.now() - (days - 1) * 86400000);
 }
 
 function sumHourBuckets(hours: Record<string, number>): number {
@@ -144,11 +167,90 @@ function sumHourBuckets(hours: Record<string, number>): number {
   return minutes;
 }
 
+function hourEntries(hours: Record<string, number>): Array<{ hour: number; minutes: number }> {
+  return Object.entries(hours)
+    .map(([hour, value]) => ({ hour: Number(hour), minutes: Number(value) || 0 }))
+    .filter((entry) => entry.minutes > 0)
+    .sort((a, b) => a.hour - b.hour);
+}
+
 function isValidDateKey(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(parsed.getTime()) && utcDateKey(parsed.getTime()) === value;
 }
+
+// Output schemas cover the top level. Nested rows stay loosely typed so the
+// reader-facing fields can evolve without a schema migration on every tweak.
+const overviewOutput = z.object({
+  username: z.string(),
+  hasStatistics: z.boolean(),
+  statisticsSource: anyObject.nullable(),
+  sync: anyObject,
+  reading: anyObject,
+  streaks: anyObject,
+  devices: z.array(anyObject),
+  asOf: z.string(),
+});
+
+const bookListOutput = z.object({
+  hasData: z.boolean(),
+  total: z.number(),
+  offset: z.number(),
+  limit: z.number(),
+  returned: z.number(),
+  books: z.array(anyObject),
+});
+
+const recentReadingOutput = z.object({
+  hasData: z.boolean(),
+  window: anyObject,
+  timezone: z.string(),
+  totalMinutes: z.number(),
+  activeDays: z.number(),
+  total: z.number(),
+  returned: z.number(),
+  books: z.array(anyObject),
+});
+
+const progressOutput = z.object({
+  mode: z.enum(["document", "list", "search"]),
+  offset: z.number(),
+  limit: z.number(),
+  total: z.number(),
+  returned: z.number(),
+  hasMore: z.boolean(),
+  records: z.array(anyObject),
+});
+
+const readingActivityOutput = z.object({
+  hasData: z.boolean(),
+  timezone: z.string(),
+  years: z.array(z.number()),
+  filterYear: z.number().nullable(),
+  daysWindow: anyObject,
+  lifetimeActiveDays: z.number(),
+  lifetimeCurrentStreak: z.number(),
+  lifetimeLongestStreak: z.number(),
+  windowTotalMinutes: z.number(),
+  windowMonthlyTotals: z.array(anyObject),
+  allTimeHourlyDistribution: z.array(anyObject),
+  days: z.array(anyObject),
+});
+
+const activityBreakdownOutput = z.object({
+  hasData: z.boolean(),
+  scope: z.enum(["day", "month"]),
+  date: z.string().optional(),
+  year: z.number().optional(),
+  month: z.number().optional(),
+  timezone: z.string(),
+  totalMinutes: z.number(),
+  total: z.number(),
+  returned: z.number(),
+  hasMore: z.boolean(),
+  books: z.array(anyObject),
+});
 
 export interface McpServerConfig {
   db: DatabaseAdapter;
@@ -168,8 +270,9 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
         "protocol and covers one record per document; reading statistics come from KOReader's " +
         "statistics.sqlite3 and cover per-book reading time, pages, highlights and notes. " +
         "Timestamps are unix seconds (UTC) unless a field ends in `Iso`. Durations are seconds " +
-        "unless the field name says `Minutes`. Calendar dates are the dates recorded by the " +
-        "device that produced the statistics, so they reflect the reader's local day.",
+        "unless the field name says `Minutes`. Progress percentages are 0 to 100. Calendar dates " +
+        "are derived from session start times in the server's timezone at sync time, which is " +
+        "UTC on Cloudflare Workers; `timezone_offset_hours` only shifts hour buckets, not dates.",
     }
   );
 
@@ -184,6 +287,7 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
         "have read or which devices they sync from.",
       annotations: READ_ONLY_ANNOTATIONS,
       inputSchema: z.object({}),
+      outputSchema: overviewOutput,
     },
     async () => {
       const progress = await getProgressSummaryByUser(db, user.userId);
@@ -192,7 +296,7 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
       const books = summary ? Object.values(summary.books) : [];
       const totals = computeReadingTotals(books);
       const daily = summary?.daily ?? {};
-      const streaks = computeReadingStreaks(daily);
+      const streaks = computeReadingStreaks(daily, serverDateKey());
 
       return textResult({
         username: user.username,
@@ -202,7 +306,7 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
           documents: progress?.total_documents ?? 0,
           progressRecords: progress?.total_records ?? 0,
           devices: progress?.total_devices ?? 0,
-          activeDays: progress?.active_days ?? 0,
+          syncActiveDays: progress?.active_days ?? 0,
           averageProgressPercent:
             progress?.avg_percentage == null ? null : Math.round(progress.avg_percentage * 100) / 100,
           lastSyncAt: progress?.last_sync_at ?? null,
@@ -220,11 +324,12 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
           lastOpenAtIso: toIsoOrNull(totals.lastOpenAt),
         },
         streaks: {
-          activeDays: streaks.activeDays,
+          readingDays: streaks.activeDays,
           currentStreak: streaks.currentStreak,
           longestStreak: streaks.longestStreak,
         },
-        devices: devices ?? [],
+        devices: (devices ?? []).map((row) => ({ device: row.device, progressRecords: row.count })),
+        asOf: new Date().toISOString(),
       });
     }
   );
@@ -236,7 +341,9 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
       description:
         "List books from the reading statistics with search, status filter, sorting and " +
         "pagination. Use `search` for title, author or md5 fragments. Status values: all, " +
-        "completed, reading, unread. Sort by read_time, last_open, pages, or progress.",
+        "completed, reading, unread. Sort by read_time, last_open, pages, or progress. Only " +
+        "books present in the statistics snapshot are listed, so a book that was synced but " +
+        "never opened in KOReader does not appear here.",
       annotations: READ_ONLY_ANNOTATIONS,
       inputSchema: z.object({
         search: z.string().optional().describe("Case-insensitive fragment of title, author or md5"),
@@ -252,11 +359,19 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
         limit: z.number().int().min(1).max(100).optional().describe("Page size, default 20"),
         offset: z.number().int().min(0).optional().describe("Number of books to skip, default 0"),
       }),
+      outputSchema: bookListOutput,
     },
     async (args) => {
       const { found, summary } = await loadSummary(db, user.userId);
       if (!found || !summary) {
-        return errorResult("No reading statistics have been synced for this account yet.");
+        return textResult({
+          hasData: false,
+          total: 0,
+          offset: args.offset ?? 0,
+          limit: args.limit ?? 20,
+          returned: 0,
+          books: [],
+        });
       }
 
       const books = queryStatisticsBooks(Object.values(summary.books), {
@@ -271,6 +386,7 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
       const page = books.slice(offset, offset + limit);
 
       return textResult({
+        hasData: true,
         total: books.length,
         offset,
         limit,
@@ -287,21 +403,34 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
       description:
         "List what was read in the last N days, aggregated per book with minutes, active " +
         "days and the last day it was read. Use this for questions like what have I been " +
-        "reading this week. Defaults to the last 7 days.",
+        "reading this week. Defaults to the last 7 days. The window ends today and is compared " +
+        "against date keys generated in the server's timezone.",
       annotations: READ_ONLY_ANNOTATIONS,
       inputSchema: z.object({
         days: z.number().int().min(1).max(90).optional().describe("Window size in days, default 7"),
         limit: z.number().int().min(1).max(50).optional().describe("Maximum books to return, default 20"),
       }),
+      outputSchema: recentReadingOutput,
     },
     async (args) => {
       const { found, summary } = await loadSummary(db, user.userId);
-      if (!found || !summary) {
-        return errorResult("No reading statistics have been synced for this account yet.");
-      }
-
       const days = args.days ?? 7;
       const cutoff = dateKeyDaysAgo(days);
+      const timezone = serverTimeZone();
+
+      if (!found || !summary) {
+        return textResult({
+          hasData: false,
+          window: { days, from: cutoff, to: serverDateKey() },
+          timezone,
+          totalMinutes: 0,
+          activeDays: 0,
+          total: 0,
+          returned: 0,
+          books: [],
+        });
+      }
+
       const activeDates = new Set<string>();
       const entries: Array<{
         md5: string;
@@ -350,7 +479,9 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
       const limit = args.limit ?? 20;
 
       return textResult({
-        window: { days, from: cutoff, to: utcDateKey() },
+        hasData: true,
+        window: { days, from: cutoff, to: serverDateKey() },
+        timezone,
         totalMinutes,
         activeDays: activeDates.size,
         total: entries.length,
@@ -366,12 +497,13 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
       title: "Book details",
       description:
         "Get one book's reading trajectory: progress, pages read, reading speed, per-day " +
-        "history, and the most recent reading sessions. Pass either the md5 or a title. When " +
-        "a title is ambiguous the tool returns the candidate list instead of guessing.",
+        "history, and the most recent reading sessions. Pass either `md5` or `title`; a title " +
+        "also matches authors. When a title is ambiguous the tool returns `ambiguous: true` " +
+        "with candidates instead of guessing. Daily dates use the server's timezone.",
       annotations: READ_ONLY_ANNOTATIONS,
       inputSchema: z.object({
         md5: z.string().optional().describe("Book md5 as shown by list_books"),
-        title: z.string().optional().describe("Book title or author, used when md5 is absent"),
+        title: z.string().optional().describe("Book title or author fragment, used when md5 is absent"),
         recent_sessions_limit: z
           .number()
           .int()
@@ -389,44 +521,61 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
       }),
     },
     async (args) => {
+      if (args.md5 && args.title) {
+        return toolError("invalid_argument", "Pass either md5 or title, not both.");
+      }
+      if (!args.md5 && !args.title) {
+        return toolError("invalid_argument", "Provide either md5 or title.");
+      }
+
       const row = await getStatisticsSnapshot(db, user.userId);
       const snapshot = row ? parseSnapshotFromJson(row.snapshot_json) : null;
       if (!snapshot) {
-        return errorResult("No reading statistics have been synced for this account yet.");
+        return textResult({ hasData: false, found: false, ambiguous: false, reason: "no_statistics" });
       }
 
       let book = null;
       if (args.md5) {
         const needle = args.md5.trim().toLowerCase();
         book = snapshot.books.find((item) => (item.md5 || "").toLowerCase() === needle) ?? null;
-        if (!book) return errorResult(`No book found for md5 "${args.md5}".`);
+        if (!book) return toolError("not_found", `No book found for md5 "${args.md5}".`);
       } else if (args.title) {
         const summary = (await loadSummary(db, user.userId)).summary;
-        if (!summary) return errorResult("No reading statistics have been synced for this account yet.");
+        if (!summary) {
+          return textResult({ hasData: false, found: false, ambiguous: false, reason: "no_statistics" });
+        }
         const { matches } = findBookByTitle(summary, args.title);
         if (matches.length === 0) {
-          return errorResult(`No book matched title "${args.title}".`);
+          return toolError("not_found", `No book matched "${args.title}".`);
         }
         if (matches.length > 1) {
-          return errorResult(
-            `Title "${args.title}" matched ${matches.length} books. Retry with one of these md5 values.`,
-            matches.slice(0, 20).map((item) => ({ md5: item.md5, title: item.title, authors: item.authors }))
-          );
+          return textResult({
+            hasData: true,
+            found: false,
+            ambiguous: true,
+            total: matches.length,
+            candidatesTruncated: matches.length > 20,
+            candidates: matches
+              .slice(0, 20)
+              .map((item) => ({ md5: item.md5, title: item.title, authors: item.authors })),
+          });
         }
         book = snapshot.books.find((item) => item.md5 === matches[0].md5) ?? null;
-      } else {
-        return errorResult("Provide either md5 or title.");
       }
 
-      if (!book) return errorResult("Book not found in the statistics snapshot.");
+      if (!book) return toolError("not_found", "Book not found in the statistics snapshot.");
 
       const trajectory = computeBookTrajectory(book);
       const sessionLimit = args.recent_sessions_limit ?? 20;
       const historyDays = args.history_days ?? 365;
       const historyCutoff = dateKeyDaysAgo(historyDays);
       const dailyHistory = trajectory.daily_history.filter((entry) => entry.date >= historyCutoff);
+      const sessions = trajectory.recent_sessions.slice(0, sessionLimit);
 
       return textResult({
+        hasData: true,
+        found: true,
+        ambiguous: false,
         md5: trajectory.md5,
         title: trajectory.title,
         authors: trajectory.authors,
@@ -448,7 +597,10 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
         dailyHistory,
         dailyHistoryTruncated: dailyHistory.length < trajectory.daily_history.length,
         historyWindowDays: historyDays,
-        recentSessions: trajectory.recent_sessions.slice(0, sessionLimit).map((session) => ({
+        sessionsTotal: trajectory.recent_sessions.length,
+        sessionsReturned: sessions.length,
+        sessionsTruncated: trajectory.recent_sessions.length > sessionLimit,
+        recentSessions: sessions.map((session) => ({
           startAt: session.start_time,
           startAtIso: toIsoOrNull(session.start_time),
           durationSeconds: session.duration,
@@ -464,8 +616,9 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
     {
       title: "Sync records",
       description:
-        "List the most recently synced document positions, newest first. Pass `document` for an " +
-        "exact lookup of where a specific file stopped, or `search` to match a path fragment.",
+        "Read sync positions for documents. Pass `document` for an exact lookup of where one " +
+        "file stopped, or `search` for a case-insensitive path fragment. Without either it " +
+        "lists the most recently synced records, newest first. `progressPercent` is 0 to 100.",
       annotations: READ_ONLY_ANNOTATIONS,
       inputSchema: z.object({
         document: z
@@ -477,8 +630,13 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
         limit: z.number().int().min(1).max(100).optional().describe("Page size, default 20"),
         offset: z.number().int().min(0).optional().describe("Records to skip, default 0"),
       }),
+      outputSchema: progressOutput,
     },
     async (args) => {
+      if (args.document && args.search) {
+        return toolError("invalid_argument", "Pass either document or search, not both.");
+      }
+
       const limit = args.limit ?? 20;
       const offset = args.offset ?? 0;
       const mapRow = (
@@ -494,7 +652,7 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
       ) => ({
         document,
         progress: row.progress,
-        percentage: row.percentage,
+        progressPercent: Math.round(Number(row.percentage) * 10000) / 100,
         device: row.device,
         deviceId: row.device_id || null,
         timestamp: row.timestamp,
@@ -504,34 +662,42 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
       if (args.document) {
         const row = await getLatestProgressByDocument(db, user.userId, args.document);
         return textResult({
-          document: args.document,
-          found: Boolean(row),
+          mode: "document",
+          offset: 0,
+          limit: 1,
+          total: row ? 1 : 0,
           returned: row ? 1 : 0,
+          hasMore: false,
           records: row ? [mapRow(row, args.document)] : [],
         });
       }
 
       if (!args.search) {
         const rows = await listProgressRecordsByUser(db, user.userId, limit, offset);
+        const summary = await getProgressSummaryByUser(db, user.userId);
+        const total = summary?.total_records ?? rows.length;
         return textResult({
+          mode: "list",
           offset,
           limit,
+          total,
           returned: rows.length,
+          hasMore: offset + rows.length < total,
           records: rows.map((row) => mapRow(row)),
         });
       }
 
-      const needle = args.search.trim().toLowerCase();
-      const fetchSize = Math.min(1000, offset + limit * 10);
-      const rows = await listProgressRecordsByUser(db, user.userId, fetchSize, 0);
-      const matched = rows.filter((row) => row.document.toLowerCase().includes(needle));
-      const page = matched.slice(offset, offset + limit);
+      const search = args.search.trim();
+      const total = await countProgressRecordsByUserSearch(db, user.userId, search);
+      const rows = await listProgressRecordsByUserSearch(db, user.userId, search, limit, offset);
       return textResult({
+        mode: "search",
         offset,
         limit,
-        totalMatched: matched.length,
-        returned: page.length,
-        records: page.map((row) => mapRow(row)),
+        total,
+        returned: rows.length,
+        hasMore: offset + rows.length < total,
+        records: rows.map((row) => mapRow(row)),
       });
     }
   );
@@ -541,37 +707,57 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
     {
       title: "Reading activity calendar",
       description:
-        "Get per-day reading minutes, active day counts, current and longest streaks, plus a " +
-        "24-hour distribution. Filter with `year` to keep a single year of daily data; without " +
-        "it only the last 365 days of daily rows are returned, while activeDays and streaks " +
-        "still cover the full history. `timezone_offset_hours` shifts the hourly distribution, " +
-        "for example 8 for UTC+8.",
+        "Get the reading calendar: per-day minutes in the requested window, lifetime active " +
+        "days and streaks, plus an all-time 24-hour distribution. Filter with `year` to keep a " +
+        "single year of daily rows; without it only the last 365 days are returned. Lifetime " +
+        "fields always cover the full history. `timezone_offset_hours` shifts hour buckets only, " +
+        "it does not move dates.",
       annotations: READ_ONLY_ANNOTATIONS,
       inputSchema: z.object({
         year: z.number().int().min(1970).max(9999).optional().describe("Only return days in this year"),
         timezone_offset_hours: z
           .number()
+          .int()
           .min(-14)
           .max(14)
           .optional()
-          .describe("Offset applied to the hourly distribution, default 0"),
+          .describe("Whole hour offset applied to hour buckets, default 0"),
       }),
+      outputSchema: readingActivityOutput,
     },
     async (args) => {
+      const timezone = serverTimeZone();
+      const prefix = args.year === undefined ? null : String(args.year) + "-";
+      const cutoff = prefix ? null : dateKeyDaysAgo(365);
+      const daysWindow = prefix
+        ? { from: `${args.year}-01-01`, to: `${args.year}-12-31` }
+        : { from: cutoff, to: serverDateKey() };
       const { found, summary } = await loadSummary(db, user.userId);
+
       if (!found || !summary) {
-        return errorResult("No reading statistics have been synced for this account yet.");
+        return textResult({
+          hasData: false,
+          timezone,
+          years: [],
+          filterYear: args.year ?? null,
+          daysWindow,
+          lifetimeActiveDays: 0,
+          lifetimeCurrentStreak: 0,
+          lifetimeLongestStreak: 0,
+          windowTotalMinutes: 0,
+          windowMonthlyTotals: [],
+          allTimeHourlyDistribution: Array.from({ length: 24 }, (_, hour) => ({ hour, minutes: 0 })),
+          days: [],
+        });
       }
 
       const daily = summary.daily ?? {};
-      const prefix = args.year === undefined ? null : String(args.year) + "-";
-      const cutoff = prefix ? null : dateKeyDaysAgo(365);
       const days = Object.entries(daily)
         .filter(([date]) => (prefix ? date.startsWith(prefix) : cutoff !== null && date >= cutoff))
         .map(([date, minutes]) => ({ date, minutes }))
         .sort((a, b) => a.date.localeCompare(b.date));
 
-      const streaks = computeReadingStreaks(daily);
+      const streaks = computeReadingStreaks(daily, serverDateKey());
       const hourlyDistribution = computeHourlyDistribution(summary, args.timezone_offset_hours ?? 0);
 
       const years: number[] = [];
@@ -588,19 +774,19 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
       }
 
       return textResult({
+        hasData: true,
+        timezone,
         years,
         filterYear: args.year ?? null,
-        daysWindow: prefix
-          ? { from: `${args.year}-01-01`, to: `${args.year}-12-31` }
-          : { from: cutoff, to: utcDateKey() },
-        activeDays: streaks.activeDays,
-        currentStreak: streaks.currentStreak,
-        longestStreak: streaks.longestStreak,
-        totalMinutes: days.reduce((sum, day) => sum + day.minutes, 0),
-        monthlyTotals: Array.from(monthlyTotals.entries())
+        daysWindow,
+        lifetimeActiveDays: streaks.activeDays,
+        lifetimeCurrentStreak: streaks.currentStreak,
+        lifetimeLongestStreak: streaks.longestStreak,
+        windowTotalMinutes: days.reduce((sum, day) => sum + day.minutes, 0),
+        windowMonthlyTotals: Array.from(monthlyTotals.entries())
           .sort((a, b) => a[0].localeCompare(b[0]))
           .map(([month, minutes]) => ({ month, minutes })),
-        hourlyDistribution: hourlyDistribution.map((minutes, hour) => ({ hour, minutes })),
+        allTimeHourlyDistribution: hourlyDistribution.map((minutes, hour) => ({ hour, minutes })),
         days,
       });
     }
@@ -611,9 +797,9 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
     {
       title: "Activity breakdown",
       description:
-        "Break reading down by book for one day or one month. Pass `date` for a single day with " +
-        "hour buckets, or pass `year` and `month` for the month with per-day buckets. When both " +
-        "are present `date` wins.",
+        "Break reading down by book for one day or one month. Pass `date` for a single day, or " +
+        "`year` and `month` for the month. Each book reports a `days` array whose entries carry " +
+        "`date`, `minutes` and `hours`. Dates use the server's timezone.",
       annotations: READ_ONLY_ANNOTATIONS,
       inputSchema: z.object({
         date: z
@@ -622,32 +808,57 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
           .describe("Day in YYYY-MM-DD format, used for a single-day breakdown"),
         year: z.number().int().min(1970).max(9999).optional().describe("Four digit year, used with month"),
         month: z.number().int().min(1).max(12).optional().describe("Month number 1 to 12, used with year"),
+        limit: z.number().int().min(1).max(100).optional().describe("Maximum books to return, default 50"),
       }),
+      outputSchema: activityBreakdownOutput,
     },
-    async ({ date, year, month }) => {
+    async ({ date, year, month, limit: limitArg }) => {
+      const hasMonthArgs = year !== undefined || month !== undefined;
+      if (date !== undefined && hasMonthArgs) {
+        return toolError("invalid_argument", "Pass either date or year and month, not both.");
+      }
       if (date === undefined && (year === undefined || month === undefined)) {
-        return errorResult("Pass `date` for one day, or both `year` and `month` for a month.");
+        return toolError("invalid_argument", "Pass `date` for one day, or both `year` and `month` for a month.");
       }
       if (date !== undefined && !isValidDateKey(date)) {
-        return errorResult(`"${date}" is not a valid YYYY-MM-DD date.`);
+        return toolError("invalid_argument", `"${date}" is not a valid YYYY-MM-DD date.`);
       }
 
+      const scope = date !== undefined ? "day" : "month";
+      const scopeFields = date !== undefined ? { date } : { year: Number(year), month: Number(month) };
+      const timezone = serverTimeZone();
+      const limit = limitArg ?? 50;
       const { found, summary } = await loadSummary(db, user.userId);
+
       if (!found || !summary) {
-        return errorResult("No reading statistics have been synced for this account yet.");
+        return textResult({
+          hasData: false,
+          scope,
+          ...scopeFields,
+          timezone,
+          totalMinutes: 0,
+          total: 0,
+          returned: 0,
+          hasMore: false,
+          books: [],
+        });
       }
 
-      if (date !== undefined) {
-        const books: Array<{
-          md5: string;
-          title: string;
-          authors: string;
+      const books: Array<{
+        md5: string;
+        title: string;
+        authors: string;
+        minutes: number;
+        days: Array<{
+          date: string;
           minutes: number;
           hours: Array<{ hour: number; minutes: number }>;
-        }> = [];
-        let totalMinutes = 0;
+        }>;
+      }> = [];
+      let totalMinutes = 0;
 
-        for (const book of Object.values(summary.books)) {
+      for (const book of Object.values(summary.books)) {
+        if (date !== undefined) {
           const buckets = book.days?.[date];
           if (!buckets) continue;
           const minutes = sumHourBuckets(buckets);
@@ -658,30 +869,23 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
             title: book.title,
             authors: book.authors,
             minutes,
-            hours: Object.entries(buckets)
-              .map(([hour, value]) => ({ hour: Number(hour), minutes: Number(value) || 0 }))
-              .filter((entry) => entry.minutes > 0)
-              .sort((a, b) => a.hour - b.hour),
+            days: [{ date, minutes, hours: hourEntries(buckets) }],
           });
+          continue;
         }
 
-        books.sort((a, b) => b.minutes - a.minutes);
-        return textResult({ scope: "day", date, totalMinutes, returned: books.length, books });
-      }
-
-      const monthPrefix = `${year}-${String(month).padStart(2, "0")}-`;
-      const books: Array<{
-        md5: string;
-        title: string;
-        authors: string;
-        minutes: number;
-        days: Record<string, Record<string, number>>;
-      }> = [];
-      let totalMinutes = 0;
-
-      for (const book of Object.values(summary.books)) {
-        const { minutes, days } = sumBookMinutesForMonth(book, monthPrefix);
+        const monthPrefix = `${Number(year)}-${String(Number(month)).padStart(2, "0")}-`;
+        const { minutes, days: dayMap } = sumBookMinutesForMonth(book, monthPrefix);
         if (minutes <= 0) continue;
+        const days = Object.entries(dayMap)
+          .map(([dayDate, buckets]) => ({
+            date: dayDate,
+            minutes: sumHourBuckets(buckets),
+            hours: hourEntries(buckets),
+          }))
+          .filter((entry) => entry.minutes > 0)
+          .sort((a, b) => a.date.localeCompare(b.date));
+        if (days.length === 0) continue;
         totalMinutes += minutes;
         books.push({
           md5: book.md5,
@@ -693,7 +897,17 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
       }
 
       books.sort((a, b) => b.minutes - a.minutes);
-      return textResult({ scope: "month", year, month, totalMinutes, returned: books.length, books });
+      return textResult({
+        hasData: true,
+        scope,
+        ...scopeFields,
+        timezone,
+        totalMinutes,
+        total: books.length,
+        returned: Math.min(books.length, limit),
+        hasMore: books.length > limit,
+        books: books.slice(0, limit),
+      });
     }
   );
 

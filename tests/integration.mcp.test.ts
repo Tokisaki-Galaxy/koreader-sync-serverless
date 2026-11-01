@@ -120,7 +120,7 @@ async function seedAccount(env: ReturnType<typeof createMockEnv>, username = "re
       body: JSON.stringify({
         document: "novels/book-a.epub",
         progress: "page:42",
-        percentage: 42.5,
+        percentage: 0.425,
         device: "Kindle",
         device_id: "k-1",
       }),
@@ -392,6 +392,10 @@ describe("MCP server", () => {
       expect(tool.annotations?.readOnlyHint).toBe(true);
       expect(tool.inputSchema.type).toBe("object");
     }
+    const withOutputSchema = list.result.tools.filter(
+      (tool: { outputSchema?: unknown }) => tool.outputSchema !== undefined
+    );
+    expect(withOutputSchema).toHaveLength(6);
   });
 
   it("serves reading data to list_books and get_reading_overview", async () => {
@@ -410,6 +414,7 @@ describe("MCP server", () => {
     expect(books.books[0].md5).toBe("bbb");
     expect(books.books[0].totalReadMinutes).toBe(60);
     expect(books.books[0].progressPercent).toBe(50);
+    expect(list.result.structuredContent.total).toBe(2);
 
     const overviewRes = await rpc(env, auth, {
       id: 2,
@@ -423,7 +428,7 @@ describe("MCP server", () => {
     expect(overview.reading.books).toBe(2);
     expect(overview.reading.completedBooks).toBe(1);
     expect(overview.reading.totalReadMinutes).toBe(70);
-    expect(overview.devices[0]).toEqual({ device: "Kindle", count: 1 });
+    expect(overview.devices[0]).toEqual({ device: "Kindle", progressRecords: 1 });
   });
 
   it("summarises recent reading and a single day", async () => {
@@ -451,7 +456,8 @@ describe("MCP server", () => {
     expect(day.scope).toBe("day");
     const book = day.books.find((item: { md5: string }) => item.md5 === "bbb");
     expect(book.minutes).toBe(30);
-    expect(book.hours.length).toBeGreaterThan(0);
+    expect(book.days).toHaveLength(1);
+    expect(book.days[0].hours.length).toBeGreaterThan(0);
     expect(day.totalMinutes).toBeGreaterThanOrEqual(30);
 
     const monthRes = await rpc(env, auth, {
@@ -529,7 +535,7 @@ describe("MCP server", () => {
     const recent = JSON.parse((await readJsonRpcResponse(recentRes)).result.content[0].text);
     expect(recent.days.some((day: { date: string }) => day.date === oldDate)).toBe(false);
     expect(recent.daysWindow.from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(recent.activeDays).toBe(2);
+    expect(recent.lifetimeActiveDays).toBe(2);
     expect(recent.years).toContain(oldYear);
 
     const yearRes = await rpc(env, auth, {
@@ -564,11 +570,12 @@ describe("MCP server", () => {
       params: { name: "list_progress_records", arguments: { document: "novels/book-a.epub" } },
     });
     const progress = JSON.parse((await readJsonRpcResponse(progressRes)).result.content[0].text);
-    expect(progress.found).toBe(true);
+    expect(progress.mode).toBe("document");
+    expect(progress.total).toBe(1);
     expect(progress.records[0]).toMatchObject({
       document: "novels/book-a.epub",
       progress: "page:42",
-      percentage: 42.5,
+      progressPercent: 42.5,
       device: "Kindle",
       deviceId: "k-1",
     });
@@ -579,8 +586,173 @@ describe("MCP server", () => {
       params: { name: "list_progress_records", arguments: { document: "missing.epub" } },
     });
     const missing = JSON.parse((await readJsonRpcResponse(missingRes)).result.content[0].text);
-    expect(missing.found).toBe(false);
+    expect(missing.mode).toBe("document");
+    expect(missing.total).toBe(0);
     expect(missing.records).toEqual([]);
+  });
+
+  it("returns empty structures instead of errors when nothing is synced", async () => {
+    const env = createMockEnv();
+    const register = await app.request(
+      "/users/create",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "empty", password: "password" }),
+      },
+      env
+    );
+    expect(register.status).toBe(201);
+    const auth = { "x-auth-user": "empty", "x-auth-key": KOREADER_KEY };
+
+    const listRes = await rpc(env, auth, {
+      id: 1,
+      method: "tools/call",
+      params: { name: "list_books", arguments: {} },
+    });
+    const list = JSON.parse((await readJsonRpcResponse(listRes)).result.content[0].text);
+    expect(list).toMatchObject({ hasData: false, total: 0, books: [] });
+
+    const activityRes = await rpc(env, auth, {
+      id: 2,
+      method: "tools/call",
+      params: { name: "get_reading_activity", arguments: {} },
+    });
+    const activity = JSON.parse((await readJsonRpcResponse(activityRes)).result.content[0].text);
+    expect(activity.hasData).toBe(false);
+    expect(activity.lifetimeActiveDays).toBe(0);
+    expect(activity.allTimeHourlyDistribution).toHaveLength(24);
+
+    const recentRes = await rpc(env, auth, {
+      id: 3,
+      method: "tools/call",
+      params: { name: "get_recent_reading", arguments: {} },
+    });
+    const recent = JSON.parse((await readJsonRpcResponse(recentRes)).result.content[0].text);
+    expect(recent).toMatchObject({ hasData: false, total: 0, totalMinutes: 0 });
+
+    const breakdownRes = await rpc(env, auth, {
+      id: 4,
+      method: "tools/call",
+      params: { name: "get_activity_breakdown", arguments: { date: "2026-01-01" } },
+    });
+    const breakdown = JSON.parse((await readJsonRpcResponse(breakdownRes)).result.content[0].text);
+    expect(breakdown).toMatchObject({ hasData: false, totalMinutes: 0, books: [] });
+
+    const detailRes = await rpc(env, auth, {
+      id: 5,
+      method: "tools/call",
+      params: { name: "get_book_details", arguments: { md5: "nope" } },
+    });
+    const detail = JSON.parse((await readJsonRpcResponse(detailRes)).result.content[0].text);
+    expect(detail).toMatchObject({ hasData: false, found: false, reason: "no_statistics" });
+  });
+
+  it("paginates progress search with real totals", async () => {
+    const env = createMockEnv();
+    const auth = await seedAccount(env);
+
+    for (let index = 0; index < 12; index += 1) {
+      const res = await app.request(
+        "/syncs/progress",
+        {
+          method: "PUT",
+          headers: { ...auth, "content-type": "application/json" },
+          body: JSON.stringify({
+            document: `chapter-${String(index).padStart(2, "0")}.epub`,
+            progress: "page:1",
+            percentage: 0.1,
+            device: "Kindle",
+            device_id: "k-1",
+          }),
+        },
+        env
+      );
+      expect(res.status).toBe(200);
+    }
+
+    const firstRes = await rpc(env, auth, {
+      id: 1,
+      method: "tools/call",
+      params: { name: "list_progress_records", arguments: { search: "chapter", limit: 5 } },
+    });
+    const first = JSON.parse((await readJsonRpcResponse(firstRes)).result.content[0].text);
+    expect(first).toMatchObject({ mode: "search", total: 12, returned: 5, hasMore: true });
+    expect(first.records[0].progressPercent).toBe(10);
+
+    const secondRes = await rpc(env, auth, {
+      id: 2,
+      method: "tools/call",
+      params: { name: "list_progress_records", arguments: { search: "chapter", limit: 5, offset: 10 } },
+    });
+    const second = JSON.parse((await readJsonRpcResponse(secondRes)).result.content[0].text);
+    expect(second).toMatchObject({ total: 12, returned: 2, hasMore: false });
+  });
+
+  it("returns candidates when a title is ambiguous", async () => {
+    const env = createMockEnv();
+    const auth = await seedAccount(env);
+
+    const ambiguousRes = await rpc(env, auth, {
+      id: 1,
+      method: "tools/call",
+      params: { name: "get_book_details", arguments: { title: "book" } },
+    });
+    const ambiguousBody = await readJsonRpcResponse(ambiguousRes);
+    expect(ambiguousBody.result.isError).toBeUndefined();
+    const ambiguous = JSON.parse(ambiguousBody.result.content[0].text);
+    expect(ambiguous).toMatchObject({ hasData: true, found: false, ambiguous: true, total: 2 });
+    expect(ambiguous.candidates).toHaveLength(2);
+
+    const conflictRes = await rpc(env, auth, {
+      id: 2,
+      method: "tools/call",
+      params: { name: "get_book_details", arguments: { md5: "aaa", title: "book" } },
+    });
+    const conflictBody = await readJsonRpcResponse(conflictRes);
+    expect(conflictBody.result.isError).toBe(true);
+    expect(JSON.parse(conflictBody.result.content[0].text).error.code).toBe("invalid_argument");
+  });
+
+  it("rejects conflicting progress selectors", async () => {
+    const env = createMockEnv();
+    const auth = await seedAccount(env);
+
+    const res = await rpc(env, auth, {
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: "list_progress_records",
+        arguments: { document: "novels/book-a.epub", search: "book" },
+      },
+    });
+    const body = await readJsonRpcResponse(res);
+    expect(body.result.isError).toBe(true);
+    expect(JSON.parse(body.result.content[0].text).error.code).toBe("invalid_argument");
+  });
+
+  it("rate limits repeated token failures", async () => {
+    const env = createMockEnv();
+    const headers = {
+      "content-type": "application/json",
+      "cf-connecting-ip": "203.0.113.9",
+    };
+    let last: Response | null = null;
+
+    for (let attempt = 0; attempt < 11; attempt += 1) {
+      last = await app.request(
+        "/mcp/token",
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ username: "rate-limit-probe", password: "wrong-password" }),
+        },
+        env
+      );
+    }
+
+    expect(last?.status).toBe(429);
+    expect(last?.headers.get("retry-after")).toBeTruthy();
   });
 
   it("accepts Basic auth and rejects unsupported protocol versions", async () => {
