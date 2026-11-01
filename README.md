@@ -283,6 +283,10 @@ extended back to a full TTL, so a client that keeps calling never expires. Only
 idle tokens lapse. Set `MCP_TOKEN_RENEW_WINDOW_HOURS=0` to disable renewal and
 keep every token on a fixed expiry.
 
+Token minting is rate limited to 10 attempts per minute per IP and username. The
+counter is per Worker isolate, so it slows brute force without acting as a global
+quota.
+
 ### Tools
 
 | Tool | Purpose |
@@ -297,10 +301,18 @@ keep every token on a fixed expiry.
 
 All tools are annotated `readOnlyHint: true`; nothing writes to the database.
 
+### Response conventions
+
+- Every tool returns compact JSON in a text block plus `structuredContent`. Six tools publish an `outputSchema`; `get_book_details` is the exception because it can return a book, an ambiguous candidate list, or an empty result.
+- Progress percentages are always 0 to 100.
+- An account with no synced statistics returns a successful empty payload with `hasData: false`; tool errors are reserved for invalid arguments and specific missing records, and carry `error.code` set to `invalid_argument` or `not_found`.
+- Calendar dates follow the server's timezone at sync time, which is UTC on Cloudflare Workers. `timezone_offset_hours` only shifts hour buckets, it never moves a date.
+
 The daily series is bounded to keep payloads small: `get_reading_activity`
-returns the last 365 days unless `year` is given, while `activeDays`, streaks and
-the hourly distribution still cover the full history. `get_book_details` returns
-365 days of daily history unless `history_days` is raised.
+returns the last 365 days unless `year` is given, while lifetime active days,
+streaks and the hourly distribution still cover the full history.
+`get_book_details` returns 365 days of daily history unless `history_days` is
+raised.
 
 ### Client configuration
 
