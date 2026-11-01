@@ -10,6 +10,13 @@ const MCP_HEADERS = {
 
 const KOREADER_KEY = "5f4dcc3b5aa765d61d8327deb882cf99";
 
+// The statistics summary keys days by the server's local date at sync time, so
+// tests must build expected keys the same way.
+function localDateKey(unixSeconds: number): string {
+  const date = new Date(unixSeconds * 1000);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 async function readJsonRpcResponse(res: Response): Promise<any> {
   const text = await res.text();
   const dataLines = text
@@ -186,7 +193,7 @@ describe("MCP modern protocol 2026-07-28", () => {
     expect(listRes.status).toBe(200);
     const list = await listRes.json();
     expect(list.result.resultType).toBe("complete");
-    expect(list.result.tools).toHaveLength(7);
+    expect(list.result.tools).toHaveLength(9);
     expect(list.result.ttlMs).toBeTypeOf("number");
     expect(list.result.cacheScope).toMatch(/^(public|private)$/);
 
@@ -374,10 +381,12 @@ describe("MCP server", () => {
     const names = list.result.tools.map((tool: { name: string }) => tool.name).sort();
     expect(names).toEqual([
       "get_book_details",
+      "get_day_activity",
       "get_document_progress",
       "get_month_activity",
       "get_reading_activity",
       "get_reading_overview",
+      "get_recent_reading",
       "list_books",
       "list_progress_records",
     ]);
@@ -417,6 +426,108 @@ describe("MCP server", () => {
     expect(overview.reading.completedBooks).toBe(1);
     expect(overview.reading.totalReadMinutes).toBe(70);
     expect(overview.devices[0]).toEqual({ device: "Kindle", count: 1 });
+  });
+
+  it("summarises recent reading and a single day", async () => {
+    const env = createMockEnv();
+    const auth = await seedAccount(env);
+
+    const recentRes = await rpc(env, auth, {
+      id: 1,
+      method: "tools/call",
+      params: { name: "get_recent_reading", arguments: { days: 7 } },
+    });
+    const recent = JSON.parse((await readJsonRpcResponse(recentRes)).result.content[0].text);
+    expect(recent.totalMinutes).toBe(40);
+    expect(recent.books.map((book: { md5: string }) => book.md5)).toEqual(["bbb", "aaa"]);
+    expect(recent.books[0]).toMatchObject({ minutes: 30, activeDays: 1, progressPercent: 50 });
+    expect(recent.window.days).toBe(7);
+
+    const date = localDateKey(Math.floor(Date.now() / 1000) - 3600);
+    const dayRes = await rpc(env, auth, {
+      id: 2,
+      method: "tools/call",
+      params: { name: "get_day_activity", arguments: { date } },
+    });
+    const day = JSON.parse((await readJsonRpcResponse(dayRes)).result.content[0].text);
+    const book = day.books.find((item: { md5: string }) => item.md5 === "bbb");
+    expect(book.minutes).toBe(30);
+    expect(book.hours.length).toBeGreaterThan(0);
+    expect(day.totalMinutes).toBeGreaterThanOrEqual(30);
+
+    const badRes = await rpc(env, auth, {
+      id: 3,
+      method: "tools/call",
+      params: { name: "get_day_activity", arguments: { date: "2026-02-30" } },
+    });
+    const bad = await readJsonRpcResponse(badRes);
+    expect(bad.result.isError).toBe(true);
+  });
+
+  it("caps the default activity window but keeps full-history streaks", async () => {
+    const env = createMockEnv();
+    const auth = await seedAccount(env);
+
+    const oldStart = Math.floor(Date.now() / 1000) - 400 * 86400;
+    const oldRes = await app.request(
+      "/syncs/statistics",
+      {
+        method: "PUT",
+        headers: {
+          ...auth,
+          "content-type": "application/json",
+          "x-client-version": "y-anna-1.0",
+          "user-agent": "Mozilla/DONTLIKE/ANYTHING",
+        },
+        body: JSON.stringify({
+          schema_version: 20221111,
+          device: "Kindle",
+          device_id: "k-1",
+          snapshot: {
+            books: [
+              {
+                md5: "old",
+                title: "Old Book",
+                authors: "Past",
+                notes: 0,
+                last_open: oldStart,
+                highlights: 0,
+                pages: 10,
+                series: "",
+                language: "en",
+                total_read_time: 600,
+                total_read_pages: 5,
+                page_stat_data: [{ page: 1, start_time: oldStart, duration: 600, total_pages: 10 }],
+              },
+            ],
+          },
+        }),
+      },
+      env
+    );
+    expect(oldRes.status).toBe(200);
+
+    const oldDate = localDateKey(oldStart);
+    const oldYear = Number(oldDate.slice(0, 4));
+
+    const recentRes = await rpc(env, auth, {
+      id: 1,
+      method: "tools/call",
+      params: { name: "get_reading_activity", arguments: {} },
+    });
+    const recent = JSON.parse((await readJsonRpcResponse(recentRes)).result.content[0].text);
+    expect(recent.days.some((day: { date: string }) => day.date === oldDate)).toBe(false);
+    expect(recent.daysWindow.from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(recent.activeDays).toBe(2);
+    expect(recent.years).toContain(oldYear);
+
+    const yearRes = await rpc(env, auth, {
+      id: 2,
+      method: "tools/call",
+      params: { name: "get_reading_activity", arguments: { year: oldYear } },
+    });
+    const year = JSON.parse((await readJsonRpcResponse(yearRes)).result.content[0].text);
+    expect(year.days.some((day: { date: string }) => day.date === oldDate)).toBe(true);
   });
 
   it("looks up a book by title and by document progress", async () => {

@@ -124,6 +124,32 @@ function sumBookMinutesForMonth(book: StatisticsBookSummary, monthPrefix: string
   return { minutes, days };
 }
 
+// Statistics date keys come from the device that recorded the session, so they
+// are compared as plain YYYY-MM-DD strings. Window boundaries use UTC, matching
+// the streak calculation.
+function utcDateKey(timestampMs: number = Date.now()): string {
+  const date = new Date(timestampMs);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function dateKeyDaysAgo(days: number): string {
+  return utcDateKey(Date.now() - (days - 1) * 86400000);
+}
+
+function sumHourBuckets(hours: Record<string, number>): number {
+  let minutes = 0;
+  for (const value of Object.values(hours)) {
+    minutes += Number(value) || 0;
+  }
+  return minutes;
+}
+
+function isValidDateKey(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && utcDateKey(parsed.getTime()) === value;
+}
+
 export interface McpServerConfig {
   db: DatabaseAdapter;
   user: McpIdentity;
@@ -255,6 +281,86 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
   );
 
   server.registerTool(
+    "get_recent_reading",
+    {
+      title: "Recent reading",
+      description:
+        "List what was read in the last N days, aggregated per book with minutes, active " +
+        "days and the last day it was read. Use this for questions like what have I been " +
+        "reading this week. Defaults to the last 7 days.",
+      annotations: READ_ONLY_ANNOTATIONS,
+      inputSchema: z.object({
+        days: z.number().int().min(1).max(90).optional().describe("Window size in days, default 7"),
+        limit: z.number().int().min(1).max(50).optional().describe("Maximum books to return, default 20"),
+      }),
+    },
+    async (args) => {
+      const { found, summary } = await loadSummary(db, user.userId);
+      if (!found || !summary) {
+        return errorResult("No reading statistics have been synced for this account yet.");
+      }
+
+      const days = args.days ?? 7;
+      const cutoff = dateKeyDaysAgo(days);
+      const activeDates = new Set<string>();
+      const entries: Array<{
+        md5: string;
+        title: string;
+        authors: string;
+        minutes: number;
+        activeDays: number;
+        lastReadDate: string | null;
+        progressPercent: number;
+        lastOpenAt: number | null;
+        lastOpenAtIso: string | null;
+      }> = [];
+      let totalMinutes = 0;
+
+      for (const book of Object.values(summary.books)) {
+        let minutes = 0;
+        let activeDays = 0;
+        let lastReadDate: string | null = null;
+
+        for (const [date, hours] of Object.entries(book.days ?? {})) {
+          if (date < cutoff) continue;
+          const dayMinutes = sumHourBuckets(hours);
+          if (dayMinutes <= 0) continue;
+          minutes += dayMinutes;
+          activeDays += 1;
+          activeDates.add(date);
+          if (lastReadDate === null || date > lastReadDate) lastReadDate = date;
+        }
+
+        if (minutes <= 0) continue;
+        totalMinutes += minutes;
+        entries.push({
+          md5: book.md5,
+          title: book.title,
+          authors: book.authors,
+          minutes,
+          activeDays,
+          lastReadDate,
+          progressPercent: Math.round(bookProgressPercent(book) * 100) / 100,
+          lastOpenAt: Number(book.last_open || 0) || null,
+          lastOpenAtIso: toIsoOrNull(book.last_open),
+        });
+      }
+
+      entries.sort((a, b) => b.minutes - a.minutes || (b.lastReadDate ?? "").localeCompare(a.lastReadDate ?? ""));
+      const limit = args.limit ?? 20;
+
+      return textResult({
+        window: { days, from: cutoff, to: utcDateKey() },
+        totalMinutes,
+        activeDays: activeDates.size,
+        total: entries.length,
+        returned: Math.min(entries.length, limit),
+        books: entries.slice(0, limit),
+      });
+    }
+  );
+
+  server.registerTool(
     "get_book_details",
     {
       title: "Book details",
@@ -273,6 +379,13 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
           .max(200)
           .optional()
           .describe("How many recent reading sessions to include, default 20"),
+        history_days: z
+          .number()
+          .int()
+          .min(1)
+          .max(3650)
+          .optional()
+          .describe("How many days of daily history to include, default 365"),
       }),
     },
     async (args) => {
@@ -309,6 +422,9 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
 
       const trajectory = computeBookTrajectory(book);
       const sessionLimit = args.recent_sessions_limit ?? 20;
+      const historyDays = args.history_days ?? 365;
+      const historyCutoff = dateKeyDaysAgo(historyDays);
+      const dailyHistory = trajectory.daily_history.filter((entry) => entry.date >= historyCutoff);
 
       return textResult({
         md5: trajectory.md5,
@@ -329,7 +445,9 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
           secondsPerPage: trajectory.reading_speed.seconds_per_page,
           pagesPerHour: trajectory.reading_speed.pages_per_hour,
         },
-        dailyHistory: trajectory.daily_history,
+        dailyHistory,
+        dailyHistoryTruncated: dailyHistory.length < trajectory.daily_history.length,
+        historyWindowDays: historyDays,
         recentSessions: trajectory.recent_sessions.slice(0, sessionLimit).map((session) => ({
           startAt: session.start_time,
           startAtIso: toIsoOrNull(session.start_time),
@@ -440,8 +558,10 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
       title: "Reading activity calendar",
       description:
         "Get per-day reading minutes, active day counts, current and longest streaks, plus a " +
-        "24-hour distribution. Filter with `year` to keep a single year of daily data. " +
-        "`timezone_offset_hours` shifts the hourly distribution, for example 8 for UTC+8.",
+        "24-hour distribution. Filter with `year` to keep a single year of daily data; without " +
+        "it only the last 365 days of daily rows are returned, while activeDays and streaks " +
+        "still cover the full history. `timezone_offset_hours` shifts the hourly distribution, " +
+        "for example 8 for UTC+8.",
       annotations: READ_ONLY_ANNOTATIONS,
       inputSchema: z.object({
         year: z.number().int().min(1970).max(9999).optional().describe("Only return days in this year"),
@@ -461,8 +581,9 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
 
       const daily = summary.daily ?? {};
       const prefix = args.year === undefined ? null : String(args.year) + "-";
+      const cutoff = prefix ? null : dateKeyDaysAgo(365);
       const days = Object.entries(daily)
-        .filter(([date]) => (prefix ? date.startsWith(prefix) : true))
+        .filter(([date]) => (prefix ? date.startsWith(prefix) : cutoff !== null && date >= cutoff))
         .map(([date, minutes]) => ({ date, minutes }))
         .sort((a, b) => a.date.localeCompare(b.date));
 
@@ -485,6 +606,9 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
       return textResult({
         years,
         filterYear: args.year ?? null,
+        daysWindow: prefix
+          ? { from: `${args.year}-01-01`, to: `${args.year}-12-31` }
+          : { from: cutoff, to: utcDateKey() },
         activeDays: streaks.activeDays,
         currentStreak: streaks.currentStreak,
         longestStreak: streaks.longestStreak,
@@ -542,6 +666,61 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
 
       books.sort((a, b) => b.minutes - a.minutes);
       return textResult({ year, month, totalMinutes, books });
+    }
+  );
+
+  server.registerTool(
+    "get_day_activity",
+    {
+      title: "Single day reading",
+      description:
+        "Get everything read on one calendar day: total minutes plus each book's minutes " +
+        "and hour buckets. Cheaper than pulling a whole month when the question is about " +
+        "one date.",
+      annotations: READ_ONLY_ANNOTATIONS,
+      inputSchema: z.object({
+        date: z.string().describe("Day in YYYY-MM-DD format, for example 2026-07-28"),
+      }),
+    },
+    async ({ date }) => {
+      if (!isValidDateKey(date)) {
+        return errorResult(`"${date}" is not a valid YYYY-MM-DD date.`);
+      }
+
+      const { found, summary } = await loadSummary(db, user.userId);
+      if (!found || !summary) {
+        return errorResult("No reading statistics have been synced for this account yet.");
+      }
+
+      const books: Array<{
+        md5: string;
+        title: string;
+        authors: string;
+        minutes: number;
+        hours: Array<{ hour: number; minutes: number }>;
+      }> = [];
+      let totalMinutes = 0;
+
+      for (const book of Object.values(summary.books)) {
+        const buckets = book.days?.[date];
+        if (!buckets) continue;
+        const minutes = sumHourBuckets(buckets);
+        if (minutes <= 0) continue;
+        totalMinutes += minutes;
+        books.push({
+          md5: book.md5,
+          title: book.title,
+          authors: book.authors,
+          minutes,
+          hours: Object.entries(buckets)
+            .map(([hour, value]) => ({ hour: Number(hour), minutes: Number(value) || 0 }))
+            .filter((entry) => entry.minutes > 0)
+            .sort((a, b) => a.hour - b.hour),
+        });
+      }
+
+      books.sort((a, b) => b.minutes - a.minutes);
+      return textResult({ date, totalMinutes, returned: books.length, books });
     }
   );
 

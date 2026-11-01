@@ -289,13 +289,20 @@ keep every token on a fixed expiry.
 | --- | --- |
 | `get_reading_overview` | Account-wide snapshot: documents, devices, total time, pages, streaks |
 | `list_books` | Search, filter, sort and page through the statistics book list |
+| `get_recent_reading` | What was read in the last N days, per book |
 | `get_book_details` | One book's trajectory, daily history and recent sessions |
 | `get_document_progress` | Latest sync position for one document |
 | `list_progress_records` | Recent sync records, newest first |
 | `get_reading_activity` | Daily minutes, streaks and 24-hour distribution |
 | `get_month_activity` | Monthly breakdown per book |
+| `get_day_activity` | Single day breakdown per book with hour buckets |
 
 All tools are annotated `readOnlyHint: true`; nothing writes to the database.
+
+The daily series is bounded to keep payloads small: `get_reading_activity`
+returns the last 365 days unless `year` is given, while `activeDays`, streaks and
+the hourly distribution still cover the full history. `get_book_details` returns
+365 days of daily history unless `history_days` is raised.
 
 ### Client configuration
 
