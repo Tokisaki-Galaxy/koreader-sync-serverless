@@ -109,6 +109,7 @@ docker run --rm -p 8787:8787 \
 - Web UIs served directly by Worker:
   - `/`: user dashboard
   - `/admin`: admin console
+- MCP server: `/mcp`, read-only tools over Streamable HTTP
 
 ## API Overview
 
@@ -209,6 +210,12 @@ Notes:
 - `PUT /admin/users/:id/password` force reset user password
 - `GET /admin` admin dashboard page
 
+### MCP Endpoints
+
+- `POST /mcp` MCP endpoint over Streamable HTTP, protocol `2026-07-28` with a 2025-era fallback
+- `POST /mcp/token` mint a bearer token from the account password
+- `DELETE /mcp/token` revoke the bearer token used by the call
+
 ## MCP Server
 
 The Worker also exposes a read-only Model Context Protocol server, so chat clients
@@ -219,6 +226,35 @@ can query reading progress and statistics with plain language.
 - Backward compatibility: 2025-era clients (`initialize` through `2025-11-25`) are still served by the same endpoint through the SDK's stateless legacy path.
 - `GET /mcp` returns `405` because the server has no standalone server-to-client stream, which the spec allows.
 - `Origin` headers that do not match the request origin are rejected with `403` unless listed in `MCP_ALLOWED_ORIGINS`.
+
+A modern call carries the envelope in `_meta` and the method in headers. This is
+what MCP clients send automatically; it is only useful when debugging by hand:
+
+```bash
+curl -X POST https://your-host/mcp \
+  -H "content-type: application/json" \
+  -H "accept: application/json, text/event-stream" \
+  -H "mcp-protocol-version: 2026-07-28" \
+  -H "mcp-method: tools/call" \
+  -H "mcp-name: list_books" \
+  -H "authorization: Bearer <token>" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "list_books",
+      "arguments": { "limit": 5 },
+      "_meta": {
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities": {}
+      }
+    }
+  }'
+```
+
+Without `_meta` the same endpoint treats the request as a 2025-era call and
+expects the `initialize` handshake first.
 
 ### Authentication
 
