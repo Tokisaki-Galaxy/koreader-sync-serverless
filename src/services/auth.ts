@@ -64,6 +64,29 @@ export async function authWebUser(c: AppContextWithDb): Promise<{ userId: number
   return { userId: row.id, username: row.username };
 }
 
+// Shared sliding-expiry core for web sessions and MCP bearer tokens. Extends the
+// stored expiry back to a full TTL once the row enters the renewal window and
+// returns the new expiry, or null when no write was needed. Callers decide how
+// long a TTL to apply and whether a cookie must be refreshed alongside it.
+export async function slideSessionExpiry(
+  db: DatabaseAdapter,
+  tokenHash: string,
+  currentExpiresAt: number,
+  ttlHours: number,
+  windowHours: number
+): Promise<number | null> {
+  if (windowHours <= 0) return null;
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (currentExpiresAt > nowSeconds + windowHours * 3600) return null;
+
+  const nextExpiresAt = nowSeconds + ttlHours * 3600;
+  if (nextExpiresAt <= currentExpiresAt) return null;
+
+  await renewSession(db, tokenHash, nextExpiresAt);
+  return nextExpiresAt;
+}
+
 // Sliding session: extend the stored expiry and refresh the cookie when the session is close
 // to lapsing. Only writes when a renewal is actually due, so the common case stays read-only.
 async function maybeRenewSession(
@@ -75,14 +98,9 @@ async function maybeRenewSession(
 ): Promise<void> {
   const ttlHours = parseSessionTtlHours(c.env);
   const windowHours = parseSessionRenewWindowHours(c.env);
-  if (windowHours <= 0) return;
+  const nextExpiresAt = await slideSessionExpiry(db, tokenHash, currentExpiresAt, ttlHours, windowHours);
+  if (nextExpiresAt === null) return;
 
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  const threshold = nowSeconds + windowHours * 3600;
-  if (currentExpiresAt > threshold) return;
-
-  const nextExpiresAt = nowSeconds + ttlHours * 3600;
-  await renewSession(db, tokenHash, nextExpiresAt);
   setCookie(c, USER_SESSION_COOKIE, token, {
     httpOnly: true,
     secure: true,

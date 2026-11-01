@@ -25,6 +25,25 @@ export function parseSessionRenewWindowHours(env: Env): number {
   return Number.isFinite(value) && value >= 0 ? value : parseSessionTtlHours(env) / 2;
 }
 
+// Bearer tokens for MCP clients live in the same sessions table as web sessions but
+// get their own lifetime, since a chat client should keep working for months.
+// Default is 90 days.
+export function parseMcpTokenTtlHours(env: Env): number {
+  const value = Number(env.MCP_TOKEN_TTL_HOURS ?? "2160");
+  return Number.isFinite(value) && value > 0 ? value : 2160;
+}
+
+// Bearer tokens slide forward while a client keeps using them, so an active
+// integration never hits a surprise 401. Renewal only writes when the token is
+// inside this window, which keeps it to roughly one write per half TTL.
+// Defaults to half the token TTL; set 0 to make tokens die at their fixed expiry.
+export function parseMcpTokenRenewWindowHours(env: Env): number {
+  const raw = env.MCP_TOKEN_RENEW_WINDOW_HOURS?.trim();
+  if (raw === undefined || raw === "") return parseMcpTokenTtlHours(env) / 2;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : parseMcpTokenTtlHours(env) / 2;
+}
+
 export function parsePbkdf2Iterations(env: Env): number {
   const value = Number(env.PBKDF2_ITERATIONS ?? DEFAULT_PBKDF2_ITERATIONS);
   if (!Number.isFinite(value) || !Number.isInteger(value)) {

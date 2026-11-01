@@ -29,6 +29,12 @@ import {
   parseSnapshotFromJson,
 } from "../services/statistics";
 import {
+  computeReadingTotals,
+  queryStatisticsBooks,
+  type BookSortField,
+  type BookStatusFilter,
+} from "../services/books";
+import {
   getDbFormatPayload,
   progressDbDataToProgressRows,
 } from "../services/dbformat";
@@ -236,16 +242,7 @@ router.get("/web/stats", async (c) => {
 
   const withSummary = await getStatisticsWithSummary(c.get("db"), auth.userId);
   const books = withSummary?.summary ? Object.values(withSummary.summary.books) : [];
-  const totalReadTime = books.reduce((sum, item) => sum + Number(item.total_read_time || 0), 0);
-  const totalReadPages = books.reduce((sum, item) => sum + Number(item.total_read_pages || 0), 0);
-  const totalHighlights = books.reduce((sum, item) => sum + Number(item.highlights || 0), 0);
-  const totalNotes = books.reduce((sum, item) => sum + Number(item.notes || 0), 0);
-  const completedBooks = books.filter((item) => {
-    const pages = Number(item.pages || 0);
-    const readPages = Number(item.total_read_pages || 0);
-    return pages > 0 && readPages >= pages;
-  }).length;
-  const statisticsLastOpen = books.reduce((max, item) => Math.max(max, Number(item.last_open || 0)), 0);
+  const totals = computeReadingTotals(books);
 
   return c.json({
     summary: {
@@ -257,13 +254,13 @@ router.get("/web/stats", async (c) => {
       lastSyncAt: summary?.last_sync_at ?? null,
     },
     readingStatistics: {
-      totalBooks: books.length,
-      totalReadTime,
-      totalReadPages,
-      completedBooks,
-      totalHighlights,
-      totalNotes,
-      lastOpenAt: statisticsLastOpen || null,
+      totalBooks: totals.totalBooks,
+      totalReadTime: totals.totalReadTime,
+      totalReadPages: totals.totalReadPages,
+      completedBooks: totals.completedBooks,
+      totalHighlights: totals.totalHighlights,
+      totalNotes: totals.totalNotes,
+      lastOpenAt: totals.lastOpenAt,
     },
     devices: devices ?? [],
   });
@@ -285,57 +282,11 @@ router.get("/web/statistics/books", async (c) => {
     return c.json({ schemaVersion: null, page, pageSize, total: 0, items: [] });
   }
 
-  let books = Object.values(withSummary.summary.books);
-
-  if (query) {
-    books = books.filter(
-      (b) =>
-        (b.title && b.title.toLowerCase().includes(query)) ||
-        (b.authors && b.authors.toLowerCase().includes(query)) ||
-        (b.md5 && b.md5.toLowerCase().includes(query))
-    );
-  }
-
-  if (status === "completed") {
-    books = books.filter((b) => {
-      const pages = Number(b.pages || 0);
-      const readPages = Number(b.total_read_pages || 0);
-      return pages > 0 && readPages >= pages;
-    });
-  } else if (status === "reading") {
-    books = books.filter((b) => {
-      const pages = Number(b.pages || 0);
-      const readPages = Number(b.total_read_pages || 0);
-      return readPages > 0 && (pages === 0 || readPages < pages);
-    });
-  } else if (status === "unread") {
-    books = books.filter((b) => Number(b.total_read_pages || 0) === 0);
-  }
-
-  books.sort((a, b) => {
-    let valA = 0;
-    let valB = 0;
-    if (sortBy === "last_open") {
-      valA = Number(a.last_open || 0);
-      valB = Number(b.last_open || 0);
-    } else if (sortBy === "pages") {
-      valA = Number(a.pages || 0);
-      valB = Number(b.pages || 0);
-    } else if (sortBy === "progress") {
-      const progA = Number(a.pages || 0) > 0 ? Number(a.total_read_pages || 0) / Number(a.pages) : 0;
-      const progB = Number(b.pages || 0) > 0 ? Number(b.total_read_pages || 0) / Number(b.pages) : 0;
-      valA = progA;
-      valB = progB;
-    } else {
-      // default: read_time
-      valA = Number(a.total_read_time || 0);
-      valB = Number(b.total_read_time || 0);
-    }
-
-    if (valA === valB) {
-      return Number(b.last_open || 0) - Number(a.last_open || 0);
-    }
-    return sortOrder === "asc" ? valA - valB : valB - valA;
+  const books = queryStatisticsBooks(Object.values(withSummary.summary.books), {
+    search: query,
+    status: status as BookStatusFilter,
+    sortBy: sortBy as BookSortField,
+    sortOrder,
   });
 
   const pagedBooks = books.slice(offset, offset + pageSize);

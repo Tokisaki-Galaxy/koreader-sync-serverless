@@ -13,8 +13,10 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.12",
+    "@modelcontextprotocol/server": "^2.4.0",
     "hono": "^4.9.11",
-    "js-md5": "^0.8.3"
+    "js-md5": "^0.8.3",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260301.0",

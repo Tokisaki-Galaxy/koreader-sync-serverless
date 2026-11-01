@@ -109,6 +109,7 @@ docker run --rm -p 8787:8787 \
 - Web UIs served directly by Worker:
   - `/`: user dashboard
   - `/admin`: admin console
+- MCP server: `/mcp`, read-only tools over Streamable HTTP
 
 ## API Overview
 
@@ -209,6 +210,136 @@ Notes:
 - `PUT /admin/users/:id/password` force reset user password
 - `GET /admin` admin dashboard page
 
+### MCP Endpoints
+
+- `POST /mcp` MCP endpoint over Streamable HTTP, protocol `2026-07-28` with a 2025-era fallback
+- `POST /mcp/token` mint a bearer token from the account password
+- `DELETE /mcp/token` revoke the bearer token used by the call
+
+## MCP Server
+
+The Worker also exposes a read-only Model Context Protocol server, so chat clients
+can query reading progress and statistics with plain language.
+
+- Endpoint: `POST /mcp` (Streamable HTTP, stateless, JSON-RPC over POST). Modern traffic answers with a JSON body and upgrades to SSE only when a tool emits mid-call messages.
+- Protocol: `2026-07-28`. Requests carry their protocol version and client capabilities in `_meta`, and `server/discover` advertises the endpoint's capabilities without an `initialize` handshake.
+- Backward compatibility: 2025-era clients (`initialize` through `2025-11-25`) are still served by the same endpoint through the SDK's stateless legacy path.
+- `GET /mcp` returns `405` because the server has no standalone server-to-client stream, which the spec allows.
+- `Origin` headers that do not match the request origin are rejected with `403` unless listed in `MCP_ALLOWED_ORIGINS`.
+
+A modern call carries the envelope in `_meta` and the method in headers. This is
+what MCP clients send automatically; it is only useful when debugging by hand:
+
+```bash
+curl -X POST https://your-host/mcp \
+  -H "content-type: application/json" \
+  -H "accept: application/json, text/event-stream" \
+  -H "mcp-protocol-version: 2026-07-28" \
+  -H "mcp-method: tools/call" \
+  -H "mcp-name: list_books" \
+  -H "authorization: Bearer <token>" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "list_books",
+      "arguments": { "limit": 5 },
+      "_meta": {
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities": {}
+      }
+    }
+  }'
+```
+
+Without `_meta` the same endpoint treats the request as a 2025-era call and
+expects the `initialize` handshake first.
+
+### Authentication
+
+Three forms are accepted:
+
+1. `Authorization: Bearer <token>` with a token minted by `POST /mcp/token` (recommended)
+2. `Authorization: Basic base64(username:password)` with the plain account password
+3. `x-auth-user` + `x-auth-key` (KOReader native, key is `md5(password)`)
+
+TLS encrypts headers in transit, so all three are safe against passive network
+reading. A bearer token is still preferable: it can be revoked on its own and does
+not put the account password into a client config file.
+
+Mint a token:
+
+```bash
+curl -X POST https://your-host/mcp/token \
+  -H "content-type: application/json" \
+  -d '{"username":"reader","password":"your-password"}'
+```
+
+Revoke the token used by the call with `DELETE /mcp/token`.
+
+Tokens slide forward: when a bearer token is used inside its renewal window it is
+extended back to a full TTL, so a client that keeps calling never expires. Only
+idle tokens lapse. Set `MCP_TOKEN_RENEW_WINDOW_HOURS=0` to disable renewal and
+keep every token on a fixed expiry.
+
+Token minting is rate limited to 10 attempts per minute per IP and username. The
+counter is per Worker isolate, so it slows brute force without acting as a global
+quota.
+
+### Tools
+
+| Tool | Purpose |
+| --- | --- |
+| `get_reading_overview` | Account-wide snapshot: documents, devices, total time, pages, streaks |
+| `list_books` | Search, filter, sort and page through the statistics book list |
+| `get_recent_reading` | What was read in the last N days, per book |
+| `get_book_details` | One book's trajectory, daily history and recent sessions |
+| `list_progress_records` | Sync records, newest first; exact lookup by `document` or `search` fragment |
+| `get_reading_activity` | Daily minutes, streaks and 24-hour distribution |
+| `get_activity_breakdown` | Per-book breakdown for one day, or one month with per-day buckets |
+
+All tools are annotated `readOnlyHint: true`; nothing writes to the database.
+
+### Response conventions
+
+- Every tool returns compact JSON in a text block plus `structuredContent`. Six tools publish an `outputSchema`; `get_book_details` is the exception because it can return a book, an ambiguous candidate list, or an empty result.
+- Progress percentages are always 0 to 100.
+- An account with no synced statistics returns a successful empty payload with `hasData: false`; tool errors are reserved for invalid arguments and specific missing records, and carry `error.code` set to `invalid_argument` or `not_found`.
+- Calendar dates follow the server's timezone at sync time, which is UTC on Cloudflare Workers. `timezone_offset_hours` only shifts hour buckets, it never moves a date.
+
+The daily series is bounded to keep payloads small: `get_reading_activity`
+returns the last 365 days unless `year` is given, while lifetime active days,
+streaks and the hourly distribution still cover the full history.
+`get_book_details` returns 365 days of daily history unless `history_days` is
+raised.
+
+### Client configuration
+
+Bearer token, Streamable HTTP:
+
+```json
+{
+  "mcpServers": {
+    "koreader-sync": {
+      "type": "http",
+      "url": "https://your-host/mcp",
+      "headers": { "Authorization": "Bearer <token-from-/mcp/token>" }
+    }
+  }
+}
+```
+
+Claude Code:
+
+```bash
+claude mcp add --transport http koreader-sync https://your-host/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+If the client only supports URL configuration, use Basic auth in the URL:
+`https://user:password@your-host/mcp`.
+
 ## Local Development
 
 1. Install dependencies:
@@ -299,3 +430,6 @@ OPTIONAL environment variables:
 - `DEBUG`: optional (`"1"`/`"true"` enables debug error logs)
 - `PBKDF2_ITERATIONS`: optional number of iterations for PBKDF2 hashing, default `20000` (adjust based on your performance/security needs)
 - `ENABLE_USER_REGISTRATION`: optional (`"1"`/`"true"` to allow user self-registration, default is open registration)
+- `MCP_TOKEN_TTL_HOURS`: optional lifetime for MCP bearer tokens in hours, default `2160` (90 days)
+- `MCP_TOKEN_RENEW_WINDOW_HOURS`: optional renewal window for MCP bearer tokens in hours, default is half of `MCP_TOKEN_TTL_HOURS`. A token used inside this window is extended back to a full TTL, so only idle tokens expire. Set `0` to disable renewal.
+- `MCP_ALLOWED_ORIGINS`: optional comma-separated origin allowlist for cross-origin MCP calls, for example `https://claude.ai`
