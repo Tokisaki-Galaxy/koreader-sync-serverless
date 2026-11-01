@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import {
   getLatestProgressByDocument,
   getProgressSummaryByUser,
@@ -157,7 +157,7 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
         "reading streaks. Use this first when the user asks something broad like how much they " +
         "have read or which devices they sync from.",
       annotations: READ_ONLY_ANNOTATIONS,
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
     async () => {
       const progress = await getProgressSummaryByUser(db, user.userId);
@@ -212,7 +212,7 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
         "pagination. Use `search` for title, author or md5 fragments. Status values: all, " +
         "completed, reading, unread. Sort by read_time, last_open, pages, or progress.",
       annotations: READ_ONLY_ANNOTATIONS,
-      inputSchema: {
+      inputSchema: z.object({
         search: z.string().optional().describe("Case-insensitive fragment of title, author or md5"),
         status: z
           .enum(["all", "completed", "reading", "unread"])
@@ -225,7 +225,7 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
         sort_order: z.enum(["asc", "desc"]).optional().describe("Sort direction, default desc"),
         limit: z.number().int().min(1).max(100).optional().describe("Page size, default 20"),
         offset: z.number().int().min(0).optional().describe("Number of books to skip, default 0"),
-      },
+      }),
     },
     async (args) => {
       const { found, summary } = await loadSummary(db, user.userId);
@@ -263,7 +263,7 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
         "history, and the most recent reading sessions. Pass either the md5 or a title. When " +
         "a title is ambiguous the tool returns the candidate list instead of guessing.",
       annotations: READ_ONLY_ANNOTATIONS,
-      inputSchema: {
+      inputSchema: z.object({
         md5: z.string().optional().describe("Book md5 as shown by list_books"),
         title: z.string().optional().describe("Book title or author, used when md5 is absent"),
         recent_sessions_limit: z
@@ -273,7 +273,7 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
           .max(200)
           .optional()
           .describe("How many recent reading sessions to include, default 20"),
-      },
+      }),
     },
     async (args) => {
       const row = await getStatisticsSnapshot(db, user.userId);
@@ -350,12 +350,12 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
         "string, percentage, device and timestamp. Useful for answering where the user stopped " +
         "in a specific file.",
       annotations: READ_ONLY_ANNOTATIONS,
-      inputSchema: {
+      inputSchema: z.object({
         document: z
           .string()
           .min(1)
           .describe("Document identifier exactly as stored, usually the file path or a hash"),
-      },
+      }),
     },
     async ({ document }) => {
       const row = await getLatestProgressByDocument(db, user.userId, document);
@@ -383,11 +383,11 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
         "List the most recently synced document positions, newest first. Filter with `search` " +
         "to match a document path fragment.",
       annotations: READ_ONLY_ANNOTATIONS,
-      inputSchema: {
+      inputSchema: z.object({
         search: z.string().optional().describe("Case-insensitive fragment of the document id"),
         limit: z.number().int().min(1).max(100).optional().describe("Page size, default 20"),
         offset: z.number().int().min(0).optional().describe("Records to skip, default 0"),
-      },
+      }),
     },
     async (args) => {
       const limit = args.limit ?? 20;
@@ -443,7 +443,7 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
         "24-hour distribution. Filter with `year` to keep a single year of daily data. " +
         "`timezone_offset_hours` shifts the hourly distribution, for example 8 for UTC+8.",
       annotations: READ_ONLY_ANNOTATIONS,
-      inputSchema: {
+      inputSchema: z.object({
         year: z.number().int().min(1970).max(9999).optional().describe("Only return days in this year"),
         timezone_offset_hours: z
           .number()
@@ -451,7 +451,7 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
           .max(14)
           .optional()
           .describe("Offset applied to the hourly distribution, default 0"),
-      },
+      }),
     },
     async (args) => {
       const { found, summary } = await loadSummary(db, user.userId);
@@ -506,10 +506,10 @@ export function createMcpServer({ db, user }: McpServerConfig): McpServer {
         "Break a single month's reading down by book, with each book's minutes and per-day " +
         "hour buckets for that month.",
       annotations: READ_ONLY_ANNOTATIONS,
-      inputSchema: {
+      inputSchema: z.object({
         year: z.number().int().min(1970).max(9999).describe("Four digit year"),
         month: z.number().int().min(1).max(12).describe("Month number, 1 to 12"),
-      },
+      }),
     },
     async ({ year, month }) => {
       const { found, summary } = await loadSummary(db, user.userId);

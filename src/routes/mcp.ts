@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { createMcpHandler } from "@modelcontextprotocol/server";
 import { createMcpServer } from "../mcp/server";
 import { authenticateMcpRequest } from "../mcp/auth";
 import { createSession, deleteSessionByTokenHash, findUserByUsername } from "../db";
@@ -140,16 +140,14 @@ router.all("/mcp", async (c) => {
   }
 
   const db = c.get("db");
-  const transport = new WebStandardStreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
+  const handler = createMcpHandler(() => createMcpServer({ db, user: identity }), {
+    legacy: "stateless",
     maxRequestBodySize: 1024 * 1024,
   });
-  const server = createMcpServer({ db, user: identity });
-  await server.connect(transport);
 
-  // The transport owns the response body, including streaming responses, so the
-  // server is intentionally left to be collected once the request settles.
-  const response = await transport.handleRequest(c.req.raw);
+  // The handler's factory runs per request, so the authenticated identity is
+  // captured here without threading it through MCP request metadata.
+  const response = await handler.fetch(c.req.raw);
   return withCors(response, cors);
 });
 

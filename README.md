@@ -214,9 +214,10 @@ Notes:
 The Worker also exposes a read-only Model Context Protocol server, so chat clients
 can query reading progress and statistics with plain language.
 
-- Endpoint: `POST /mcp` (Streamable HTTP, stateless, JSON-RPC over POST with SSE responses)
-- Protocol: `2025-11-25`, negotiated during `initialize`. Older clients are still served through the SDK's supported version list.
-- Transport: HTTP POST, SSE responses. `GET /mcp` returns `405` because the server has no server-initiated messages, which the spec allows.
+- Endpoint: `POST /mcp` (Streamable HTTP, stateless, JSON-RPC over POST). Modern traffic answers with a JSON body and upgrades to SSE only when a tool emits mid-call messages.
+- Protocol: `2026-07-28`. Requests carry their protocol version and client capabilities in `_meta`, and `server/discover` advertises the endpoint's capabilities without an `initialize` handshake.
+- Backward compatibility: 2025-era clients (`initialize` through `2025-11-25`) are still served by the same endpoint through the SDK's stateless legacy path.
+- `GET /mcp` returns `405` because the server has no standalone server-to-client stream, which the spec allows.
 - `Origin` headers that do not match the request origin are rejected with `403` unless listed in `MCP_ALLOWED_ORIGINS`.
 
 ### Authentication

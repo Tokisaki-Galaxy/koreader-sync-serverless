@@ -125,6 +125,101 @@ async function seedAccount(env: ReturnType<typeof createMockEnv>, username = "re
   return auth;
 }
 
+describe("MCP modern protocol 2026-07-28", () => {
+  const MODERN_META = {
+    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+    "io.modelcontextprotocol/clientCapabilities": {},
+  };
+
+  async function modernRpc(
+    env: ReturnType<typeof createMockEnv>,
+    auth: Record<string, string>,
+    id: number,
+    method: string,
+    params: Record<string, unknown> = {},
+    name?: string
+  ): Promise<Response> {
+    const headers: Record<string, string> = {
+      ...MCP_HEADERS,
+      ...auth,
+      "mcp-protocol-version": "2026-07-28",
+      "mcp-method": method,
+    };
+    if (name) headers["mcp-name"] = name;
+
+    return app.request(
+      "/mcp",
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          method,
+          params: { ...params, _meta: MODERN_META },
+        }),
+      },
+      env
+    );
+  }
+
+  it("advertises supported versions through server/discover", async () => {
+    const env = createMockEnv();
+    const auth = await seedAccount(env);
+
+    const res = await modernRpc(env, auth, 1, "server/discover");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.result.resultType).toBe("complete");
+    expect(body.result.supportedVersions).toContain("2026-07-28");
+    expect(body.result.serverInfo ?? body.result._meta["io.modelcontextprotocol/serverInfo"]).toMatchObject({
+      name: "koreader-sync",
+      version: "1.0.0",
+    });
+  });
+
+  it("serves tools/list and tools/call without an initialize handshake", async () => {
+    const env = createMockEnv();
+    const auth = await seedAccount(env);
+
+    const listRes = await modernRpc(env, auth, 2, "tools/list");
+    expect(listRes.status).toBe(200);
+    const list = await listRes.json();
+    expect(list.result.resultType).toBe("complete");
+    expect(list.result.tools).toHaveLength(7);
+    expect(list.result.ttlMs).toBeTypeOf("number");
+    expect(list.result.cacheScope).toMatch(/^(public|private)$/);
+
+    const callRes = await modernRpc(env, auth, 3, "tools/call", { name: "list_books", arguments: {} }, "list_books");
+    expect(callRes.status).toBe(200);
+    const call = await callRes.json();
+    expect(call.result.resultType).toBe("complete");
+    const payload = JSON.parse(call.result.content[0].text);
+    expect(payload.total).toBe(2);
+  });
+
+  it("rejects modern requests missing the Mcp-Method header", async () => {
+    const env = createMockEnv();
+    const auth = await seedAccount(env);
+
+    const res = await app.request(
+      "/mcp",
+      {
+        method: "POST",
+        headers: { ...MCP_HEADERS, ...auth, "mcp-protocol-version": "2026-07-28" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 4,
+          method: "tools/list",
+          params: { _meta: MODERN_META },
+        }),
+      },
+      env
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("MCP server", () => {
   it("rejects unauthenticated requests with a Bearer challenge", async () => {
     const env = createMockEnv();
