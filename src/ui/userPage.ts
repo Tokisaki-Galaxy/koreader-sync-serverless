@@ -411,7 +411,8 @@ export function renderUserPage(locale: Locale): string {
     .device-recent-time { color: var(--text-secondary); white-space: nowrap; }
     .device-hidden-badge { font-size: 11px; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 999px; padding: 1px 7px; }
     .link-btn { background: none; border: none; color: var(--primary); padding: 0; font-size: 12px; cursor: pointer; text-align: left; }
-    .link-btn:hover { text-decoration: underline; }
+    .link-btn:hover { background: none; color: var(--primary); text-decoration: underline; }
+    .link-btn:active { transform: none; }
     .device-dialog-field { display: grid; gap: 6px; margin-top: 10px; }
     .device-dialog-field input, .device-dialog-field select { width: 100%; min-width: 0; }
     #recordDeviceFilter { flex-wrap: wrap; }
