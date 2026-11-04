@@ -43,7 +43,7 @@ import {
   getDbFormatPayload,
   progressDbDataToProgressRows,
 } from "../services/dbformat";
-import { MAX_SNAPSHOT_BYTES, snapshotByteLength } from "../services/snapshotChunks";
+import { MAX_IMPORT_BYTES, MAX_SNAPSHOT_BYTES, snapshotByteLength } from "../services/snapshotChunks";
 import { renderUserPage } from "../ui/userPage";
 import type { StatisticsBookRow, UserLoginRequest } from "../types";
 import type { AppEnv } from "../context";
@@ -140,7 +140,7 @@ router.post("/web/import", async (c) => {
   const declaredLength = c.req.header("content-length");
   if (declaredLength !== undefined) {
     const parsedLength = Number(declaredLength);
-    if (Number.isFinite(parsedLength) && parsedLength > MAX_SNAPSHOT_BYTES) {
+    if (Number.isFinite(parsedLength) && parsedLength > MAX_IMPORT_BYTES) {
       return c.json({ error: "Import payload too large" }, 413);
     }
   }

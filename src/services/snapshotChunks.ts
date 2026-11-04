@@ -10,6 +10,11 @@ export const SNAPSHOT_CHUNK_BYTES = 512 * 1024;
 // plenty of headroom over the 5 MB payloads seen in practice.
 export const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 
+// `/web/import` carries progress rows and statistics in one request, so the
+// whole body needs separate headroom while the merged snapshot keeps the
+// stricter 8 MB limit.
+export const MAX_IMPORT_BYTES = 16 * 1024 * 1024;
+
 const utf8Encoder = new TextEncoder();
 const utf8Decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
