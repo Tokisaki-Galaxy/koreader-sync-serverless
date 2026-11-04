@@ -14,6 +14,7 @@ import { hashPassword, sha256 } from "../crypto";
 import { getMessages, pickLocale } from "../i18n";
 import { ADMIN_SESSION_COOKIE, authAdmin, timingSafeEqual } from "../services/auth";
 import { badRequest, isValidPassword, parsePbkdf2Iterations, parseSessionTtlHours } from "../services/common";
+import { logServerError } from "../services/errors";
 import { renderAdminPage } from "../ui/adminPage";
 import type { AppEnv } from "../context";
 
@@ -29,7 +30,10 @@ router.post("/admin/auth/login", async (c) => {
 
   const token = body.token || "";
   const expectedToken = c.env.ADMIN_TOKEN ?? "";
-  if (!expectedToken) return c.json({ error: "Admin token is not configured" }, 500);
+  if (!expectedToken) {
+    logServerError(c, "admin token missing", new Error("ADMIN_TOKEN is not configured"));
+    return c.json({ error: "Admin token is not configured" }, 500);
+  }
   if (!token || !timingSafeEqual(token, expectedToken)) return c.json({ error: "Invalid token" }, 401);
 
   const ttlHours = parseSessionTtlHours(c.env);
@@ -129,7 +133,9 @@ router.post("/admin/init", async (c) => {
 
 router.get("/admin", (c) => {
   const locale = pickLocale(c.req.header("accept-language"));
-  return c.html(renderAdminPage(locale));
+  const nonce = crypto.randomUUID().replaceAll("-", "");
+  c.set("cspNonce", nonce);
+  return c.html(renderAdminPage(locale, nonce));
 });
 
 export default router;

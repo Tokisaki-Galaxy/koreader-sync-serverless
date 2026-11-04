@@ -14,7 +14,8 @@ export function createApp() {
   const app = new Hono<AppEnv>();
 
   app.use("*", async (c, next) => {
-    const requestId = c.req.header("x-request-id") || crypto.randomUUID();
+    const provided = c.req.header("x-request-id") || "";
+    const requestId = /^[A-Za-z0-9._-]{1,128}$/.test(provided) ? provided : crypto.randomUUID();
     c.set("requestId", requestId);
     c.header("x-request-id", requestId);
     await next();

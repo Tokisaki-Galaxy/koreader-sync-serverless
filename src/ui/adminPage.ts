@@ -4,16 +4,17 @@ function toScriptJson(value: unknown): string {
   return JSON.stringify(value).replaceAll("<", "\\u003c");
 }
 
-export function renderAdminPage(locale: Locale): string {
+export function renderAdminPage(locale: Locale, nonce?: string): string {
   const m = getMessages(locale).admin;
   const i18nJson = toScriptJson(m);
+  const nonceAttr = nonce ? ` nonce="${nonce}"` : "";
   return `<!doctype html>
 <html lang="${locale}">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${m.title}</title>
-  <style>
+  <style${nonceAttr}>
     :root {
       --bg: #0b0f19;
       --bg-radial: radial-gradient(circle at 50% 0%, #1e293b 0%, #0b0f19 80%);
@@ -354,7 +355,7 @@ export function renderAdminPage(locale: Locale): string {
     </section>
   </div>
 
-  <script>
+  <script${nonceAttr}>
     const I18N = ${i18nJson};
     const MS_PER_SECOND = 1000;
     const DATE_FORMATS = {

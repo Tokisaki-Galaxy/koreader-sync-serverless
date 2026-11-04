@@ -67,7 +67,9 @@ export function withSecurityHeaders(headers: Headers, nonce?: string): Headers {
   const scriptSrc = nonce
     ? `'self' 'nonce-${nonce}' 'wasm-unsafe-eval'`
     : `'self' 'wasm-unsafe-eval'`;
-  const styleSrc = nonce ? `'self' 'nonce-${nonce}'` : `'self'`;
+  const styleSrc = nonce
+    ? `'self' 'nonce-${nonce}' 'unsafe-inline'`
+    : `'self' 'unsafe-inline'`;
   headers.set(
     "content-security-policy",
     `default-src 'self'; style-src ${styleSrc}; style-src-elem ${styleSrc}; style-src-attr 'unsafe-inline'; script-src ${scriptSrc}; script-src-attr 'none'; object-src 'none'; frame-ancestors 'none';`

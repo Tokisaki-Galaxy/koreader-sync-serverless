@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
-import {
+import { createContext, runInContext } from "node:vm";
+import { clientHelpersSource } from "../src/ui/clientHelpersSource";
+
+const context = createContext({});
+runInContext(clientHelpersSource, context);
+const helpers = context as unknown as Record<string, (...args: any[]) => any>;
+const {
   deviceDisplayName,
   deviceDisplayNameWithSuffix,
   deviceRecordLabel,
   deviceSharePercent,
   escapeHtml,
   truncateId,
-} from "../src/ui/clientHelpers.mjs";
+} = helpers;
 
 describe("client helpers", () => {
   it.each([

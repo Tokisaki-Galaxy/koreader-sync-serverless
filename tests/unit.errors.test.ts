@@ -45,5 +45,13 @@ describe("error logging", () => {
     const generated = await app.request("/healthcheck", undefined, env);
     expect(generated.status).toBe(200);
     expect(generated.headers.get("x-request-id")).toMatch(/[0-9a-f-]{36}/);
+
+    const invalid = await app.request(
+      "/healthcheck",
+      { headers: { "x-request-id": "bad header value" } },
+      env
+    );
+    expect(invalid.status).toBe(200);
+    expect(invalid.headers.get("x-request-id")).toMatch(/[0-9a-f-]{36}/);
   });
 });

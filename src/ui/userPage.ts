@@ -1,27 +1,9 @@
 import { getMessages, type Locale } from "../i18n";
-import {
-  deviceDisplayName,
-  deviceDisplayNameWithSuffix,
-  deviceRecordLabel,
-  deviceSharePercent,
-  escapeHtml,
-  truncateId,
-} from "./clientHelpers.mjs";
+import { clientHelpersSource } from "./clientHelpersSource";
 
 function toScriptJson(value: unknown): string {
   return JSON.stringify(value).replaceAll("<", "\\u003c");
 }
-
-const clientHelpersSource = [
-  escapeHtml,
-  deviceDisplayName,
-  deviceDisplayNameWithSuffix,
-  deviceRecordLabel,
-  truncateId,
-  deviceSharePercent,
-]
-  .map((fn) => fn.toString())
-  .join("\n\n    ");
 
 export function renderUserPage(locale: Locale, nonce?: string): string {
   const m = getMessages(locale).user;

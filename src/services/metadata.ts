@@ -21,8 +21,11 @@ export function normalizeProgressMetadata(value: unknown): string | null {
   const metadata: Record<string, string> = {};
   for (const key of ["filename", "title", "authors"] as const) {
     const field = source[key];
-    if (typeof field === "string" && field.length > 0) {
-      metadata[key] = truncateUtf8(field, MAX_METADATA_FIELD_BYTES);
+    if (typeof field === "string") {
+      const trimmed = field.trim();
+      if (trimmed.length > 0) {
+        metadata[key] = truncateUtf8(trimmed, MAX_METADATA_FIELD_BYTES);
+      }
     }
   }
   if (Object.keys(metadata).length === 0) return null;
@@ -36,11 +39,20 @@ export function parseProgressMetadata(
   if (!value) return null;
   try {
     const parsed = JSON.parse(value);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, string>;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const source = parsed as Record<string, unknown>;
+    const metadata: Record<string, string> = {};
+    for (const key of ["filename", "title", "authors"] as const) {
+      const field = source[key];
+      if (typeof field === "string") {
+        const trimmed = field.trim();
+        if (trimmed.length > 0) {
+          metadata[key] = trimmed;
+        }
+      }
     }
+    return Object.keys(metadata).length > 0 ? metadata : null;
   } catch {
     return null;
   }
-  return null;
 }
