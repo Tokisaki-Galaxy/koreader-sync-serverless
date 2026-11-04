@@ -9,7 +9,10 @@ import {
   getStatisticsSnapshot,
   listAllProgressByUser,
   listDeviceUsageByUser,
-  listProgressRecordsByUser,
+  listProgressRecordsByUserFiltered,
+  listUserDevicesWithUsage,
+  mergeUserDevices,
+  updateUserDeviceSettings,
   upsertProgress,
   upsertStatisticsSnapshot,
 } from "../db";
@@ -226,8 +229,17 @@ router.get("/web/records", async (c) => {
   const page = Math.max(1, Number(c.req.query("page") || "1"));
   const pageSize = Math.min(100, Math.max(1, Number(c.req.query("pageSize") || "20")));
   const offset = (page - 1) * pageSize;
+  const search = (c.req.query("search") || "").trim();
+  const deviceId = (c.req.query("device_id") || "").trim();
+  const device = (c.req.query("device") || "").trim();
 
-  const results = await listProgressRecordsByUser(c.get("db"), auth.userId, pageSize, offset);
+  const results = await listProgressRecordsByUserFiltered(c.get("db"), auth.userId, {
+    search: search || undefined,
+    deviceId: deviceId || undefined,
+    device: device || undefined,
+    pageSize,
+    offset,
+  });
 
   return c.json({ page, pageSize, items: results ?? [] });
 });
@@ -238,7 +250,25 @@ router.get("/web/stats", async (c) => {
 
   const summary = await getProgressSummaryByUser(c.get("db"), auth.userId);
 
-  const devices = await listDeviceUsageByUser(c.get("db"), auth.userId);
+  let devices = await listUserDevicesWithUsage(c.get("db"), auth.userId);
+  if (devices.length === 0) {
+    // Backward-compatible fallback for databases that have not run the
+    // user_devices migration yet.
+    const legacy = await listDeviceUsageByUser(c.get("db"), auth.userId);
+    devices = legacy.map((row, index) => ({
+      id: -(index + 1),
+      deviceKey: `name:${row.device}`,
+      device: row.device,
+      deviceId: "",
+      alias: null,
+      hidden: false,
+      firstSeenAt: 0,
+      lastSeenAt: 0,
+      records: row.count,
+      averageProgress: null,
+    }));
+  }
+  const visibleDevices = devices.filter((device) => !device.hidden);
 
   const withSummary = await getStatisticsWithSummary(c.get("db"), auth.userId);
   const books = withSummary?.summary ? Object.values(withSummary.summary.books) : [];
@@ -248,7 +278,7 @@ router.get("/web/stats", async (c) => {
     summary: {
       totalRecords: summary?.total_records ?? 0,
       totalDocuments: summary?.total_documents ?? 0,
-      totalDevices: summary?.total_devices ?? 0,
+      totalDevices: visibleDevices.length,
       activeDays: summary?.active_days ?? 0,
       averagePercentage: summary?.avg_percentage ?? 0,
       lastSyncAt: summary?.last_sync_at ?? null,
@@ -262,8 +292,76 @@ router.get("/web/stats", async (c) => {
       totalNotes: totals.totalNotes,
       lastOpenAt: totals.lastOpenAt,
     },
-    devices: devices ?? [],
+    devices,
   });
+});
+
+function parseDeviceId(value: string): number | null {
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+router.patch("/web/devices/:id", async (c) => {
+  const auth = await authWebUser(c);
+  if (!auth) return c.json({ error: "Unauthorized" }, 401);
+  const id = parseDeviceId(c.req.param("id"));
+  if (!id) return badRequest("Invalid device id");
+
+  let body: { alias?: unknown; hidden?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return badRequest("Invalid JSON body");
+  }
+
+  const settings: { alias?: string | null; hidden?: boolean } = {};
+  if (body.alias !== undefined) {
+    if (body.alias !== null && typeof body.alias !== "string") {
+      return badRequest("Invalid alias");
+    }
+    const alias = typeof body.alias === "string" ? body.alias.trim().slice(0, 80) : "";
+    settings.alias = alias || null;
+  }
+  if (body.hidden !== undefined) {
+    if (typeof body.hidden !== "boolean") {
+      return badRequest("Invalid hidden flag");
+    }
+    settings.hidden = body.hidden;
+  }
+  if (settings.alias === undefined && settings.hidden === undefined) {
+    return badRequest("No changes");
+  }
+
+  const updated = await updateUserDeviceSettings(c.get("db"), auth.userId, id, settings);
+  if (!updated) return c.json({ error: "Device not found" }, 404);
+  return c.json({ ok: true });
+});
+
+router.post("/web/devices/:id/merge", async (c) => {
+  const auth = await authWebUser(c);
+  if (!auth) return c.json({ error: "Unauthorized" }, 401);
+  const sourceId = parseDeviceId(c.req.param("id"));
+  if (!sourceId) return badRequest("Invalid device id");
+
+  let body: { targetId?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return badRequest("Invalid JSON body");
+  }
+  const targetId = typeof body.targetId === "number" ? body.targetId : Number(body.targetId);
+  if (!Number.isInteger(targetId) || targetId <= 0) {
+    return badRequest("Invalid target device");
+  }
+
+  const result = await mergeUserDevices(c.get("db"), auth.userId, sourceId, targetId);
+  if (!result.ok) {
+    if (result.error === "same_device") {
+      return badRequest("Cannot merge a device into itself");
+    }
+    return c.json({ error: "Device not found" }, 404);
+  }
+  return c.json({ ok: true });
 });
 
 router.get("/web/statistics/books", async (c) => {

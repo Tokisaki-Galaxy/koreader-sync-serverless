@@ -3,6 +3,7 @@ import {
   createUser,
   getLatestProgressByDocument,
   getStatisticsSnapshot,
+  touchUserDevice,
   upsertProgress,
   upsertStatisticsSnapshot,
 } from "../db";
@@ -182,6 +183,12 @@ router.put("/syncs/progress", async (c) => {
       timestamp,
       metadata: normalizeProgressMetadata(body.metadata),
     });
+    try {
+      await touchUserDevice(c.get("db"), auth.userId, device, device_id ?? "", timestamp);
+    } catch (error) {
+      // Device bookkeeping must never break progress sync.
+      logError(c, "Touch Device Error (/syncs/progress)", error);
+    }
     return c.json({ document, timestamp });
   } catch (error) {
     logError(c, "Upsert Progress Error", error);
@@ -278,6 +285,12 @@ router.put("/syncs/statistics", async (c) => {
       JSON.stringify(mergedSnapshot),
       JSON.stringify(summary)
     );
+    try {
+      await touchUserDevice(c.get("db"), auth.userId, device, deviceId, Math.floor(Date.now() / 1000));
+    } catch (error) {
+      // Device bookkeeping must never break statistics sync.
+      logError(c, "Touch Device Error (/syncs/statistics)", error);
+    }
 
     return c.json({
       ok: true,

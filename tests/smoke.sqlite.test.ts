@@ -212,6 +212,157 @@ describe("real-sqlite in-process smoke", () => {
     expect(exportData2.statistics.snapshot.books).toHaveLength(2);
   });
 
+  it("lists, renames, hides, merges, and filters devices", async () => {
+    await app.request(
+      "/users/create",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "deviceuser", password: "password" }),
+      },
+      env
+    );
+
+    const authHeaders = {
+      "x-auth-user": "deviceuser",
+      "x-auth-key": "5f4dcc3b5aa765d61d8327deb882cf99",
+      "content-type": "application/json",
+    };
+
+    const putProgress = (body: Record<string, unknown>) =>
+      app.request(
+        "/syncs/progress",
+        { method: "PUT", headers: authHeaders, body: JSON.stringify(body) },
+        env
+      );
+
+    expect((await putProgress({
+      document: "device-doc-a",
+      progress: "page:1",
+      percentage: 0.1,
+      device: "Kindle",
+      device_id: "id-1",
+    })).status).toBe(200);
+    expect((await putProgress({
+      document: "device-doc-b",
+      progress: "page:2",
+      percentage: 0.2,
+      device: "Kobo",
+      device_id: "",
+    })).status).toBe(200);
+
+    const statsPut = await app.request(
+      "/syncs/statistics",
+      {
+        method: "PUT",
+        headers: { ...authHeaders, "x-client-version": "y-anna-1.0", "User-Agent": "Mozilla/DONTLIKE/ANYTHING" },
+        body: JSON.stringify({
+          schema_version: 20221111,
+          device: "PocketBook",
+          device_id: "id-3",
+          snapshot: { books: [] },
+        }),
+      },
+      env
+    );
+    expect(statsPut.status).toBe(200);
+
+    const login = await app.request(
+      "/web/auth/login",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "deviceuser", password: "password" }),
+      },
+      env
+    );
+    const cookie = getCookieHeaderFromResponse(login, "ks_session");
+
+    const initial = await (await app.request("/web/stats", { headers: { cookie } }, env)).json();
+    expect(initial.devices).toHaveLength(3);
+    const kindle = initial.devices.find((d: { device: string }) => d.device === "Kindle");
+    const kobo = initial.devices.find((d: { device: string }) => d.device === "Kobo");
+    const pocket = initial.devices.find((d: { device: string }) => d.device === "PocketBook");
+    expect(kindle).toMatchObject({ deviceId: "id-1", records: 1, hidden: false });
+    expect(kobo).toMatchObject({ deviceId: "", records: 1, hidden: false });
+    expect(pocket).toMatchObject({ deviceId: "id-3", records: 0, hidden: false });
+
+    const rename = await app.request(
+      `/web/devices/${kindle.id}`,
+      {
+        method: "PATCH",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ alias: "Kindle PW5" }),
+      },
+      env
+    );
+    expect(rename.status).toBe(200);
+
+    const hide = await app.request(
+      `/web/devices/${kobo.id}`,
+      {
+        method: "PATCH",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ hidden: true }),
+      },
+      env
+    );
+    expect(hide.status).toBe(200);
+
+    const merge = await app.request(
+      `/web/devices/${kobo.id}/merge`,
+      {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ targetId: kindle.id }),
+      },
+      env
+    );
+    expect(merge.status).toBe(200);
+
+    const hidePocket = await app.request(
+      `/web/devices/${pocket.id}`,
+      {
+        method: "PATCH",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ hidden: true }),
+      },
+      env
+    );
+    expect(hidePocket.status).toBe(200);
+
+    const hiddenStats = await (await app.request("/web/stats", { headers: { cookie } }, env)).json();
+    expect(hiddenStats.devices).toHaveLength(2);
+    expect(hiddenStats.devices.find((d: { id: number }) => d.id === kindle.id)).toMatchObject({
+      alias: "Kindle PW5",
+      records: 2,
+    });
+    expect(hiddenStats.devices.find((d: { id: number }) => d.id === pocket.id)).toMatchObject({
+      hidden: true,
+    });
+    expect(hiddenStats.summary.totalDevices).toBe(1);
+
+    const unhidePocket = await app.request(
+      `/web/devices/${pocket.id}`,
+      {
+        method: "PATCH",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ hidden: false }),
+      },
+      env
+    );
+    expect(unhidePocket.status).toBe(200);
+
+    const records = await app.request(
+      "/web/records?device_id=id-1&pageSize=10",
+      { headers: { cookie } },
+      env
+    );
+    const recordsData = await records.json();
+    expect(recordsData.items).toHaveLength(2);
+    expect(recordsData.items.every((item: { device_id: string }) => item.device_id === "id-1")).toBe(true);
+  });
+
   it("serves db-format schema payload on real runtime", async () => {
     const res = await app.request("/web/export/db-format", { method: "GET" }, env);
     expect(res.status).toBe(200);

@@ -31,6 +31,31 @@ export interface ProgressRow {
   document?: string;
 }
 
+export interface UserDeviceRow {
+  id: number;
+  user_id: number;
+  device_key: string;
+  device: string;
+  device_id: string;
+  alias: string | null;
+  hidden: number;
+  first_seen_at: number;
+  last_seen_at: number;
+}
+
+export interface DeviceUsage {
+  id: number;
+  deviceKey: string;
+  device: string;
+  deviceId: string;
+  alias: string | null;
+  hidden: boolean;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  records: number;
+  averageProgress: number | null;
+}
+
 export interface RegisterRequest {
   username: string;
   password: string;
