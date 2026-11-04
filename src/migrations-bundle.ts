@@ -152,4 +152,21 @@ ON CONFLICT(user_id, device_key) DO UPDATE SET
   last_seen_at = MAX(user_devices.last_seen_at, excluded.last_seen_at);
 `,
   },
+  {
+    version: "0007_statistics_snapshot_chunks",
+    sql: `CREATE TABLE IF NOT EXISTS statistics_snapshot_chunk (
+  user_id INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  PRIMARY KEY (user_id, kind, chunk_index),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+`,
+  },
+  {
+    version: "0008_statistics_revision",
+    sql: `ALTER TABLE statistics_snapshot ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
+`,
+  },
 ];

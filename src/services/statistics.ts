@@ -1,5 +1,10 @@
 import type { DatabaseAdapter } from "../database/adapter";
-import { getStatisticsSnapshot, upsertStatisticsSnapshot } from "../db";
+import {
+  getStatisticsSnapshotMeta,
+  loadStatisticsSnapshotJson,
+  loadStatisticsSummaryJson,
+  updateStatisticsSummary,
+} from "../db";
 import type { StatisticsBookRow, StatisticsPageStatRow, StatisticsSnapshot } from "../types";
 
 // Bumped whenever the summary shape or its computation changes, so cached summaries written
@@ -535,24 +540,41 @@ export async function getStatisticsWithSummary(
   db: DatabaseAdapter,
   userId: number
 ): Promise<StatisticsRowWithSummary | null> {
-  const row = await getStatisticsSnapshot(db, userId);
+  const row = await getStatisticsSnapshotMeta(db, userId);
   if (!row) return null;
 
-  let summary = parseStatisticsSummary(row.statistics_summary_json);
+  let summary = parseStatisticsSummary(await loadStatisticsSummaryJson(db, userId, row));
   if (summary === null) {
-    const snapshot = parseSnapshotFromJson(row.snapshot_json);
+    const snapshotJson = await loadStatisticsSnapshotJson(db, userId, row);
+    const snapshot = parseSnapshotFromJson(snapshotJson);
     if (snapshot) {
       summary = buildStatisticsSummary(snapshot);
       try {
-        await upsertStatisticsSnapshot(
+        const saved = await updateStatisticsSummary(
           db,
           userId,
-          row.schema_version,
-          row.device,
-          row.device_id,
-          row.snapshot_json,
-          JSON.stringify(summary)
+          JSON.stringify(summary),
+          row.revision
         );
+        if (!saved) {
+          // The snapshot moved on while the summary was rebuilt, or the
+          // summary is too large to cache inline. Never return a summary that
+          // belongs to a superseded snapshot.
+          const freshRow = await getStatisticsSnapshotMeta(db, userId);
+          if (freshRow && freshRow.revision !== row.revision) {
+            const freshSummary = parseStatisticsSummary(
+              await loadStatisticsSummaryJson(db, userId, freshRow)
+            );
+            if (freshSummary) {
+              summary = freshSummary;
+            } else {
+              const freshSnapshot = parseSnapshotFromJson(
+                await loadStatisticsSnapshotJson(db, userId, freshRow)
+              );
+              if (freshSnapshot) summary = buildStatisticsSummary(freshSnapshot);
+            }
+          }
+        }
       } catch {
         // Non-fatal: the backfill is retried on the next read.
       }

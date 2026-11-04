@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import type { DatabaseAdapter } from "../database/adapter";
+import type { DatabaseAdapter, SqlStatement } from "../database/adapter";
 
 const require = createRequire(import.meta.url);
 type NodeSqlite = {
@@ -18,18 +18,17 @@ const sqliteModule = require("node:sqlite") as NodeSqlite;
 const DatabaseSync = sqliteModule.DatabaseSync;
 
 class SqliteStatementAdapter {
-  private params: unknown[] = [];
   constructor(
     private readonly statement: {
       get(...params: unknown[]): unknown;
       all(...params: unknown[]): unknown[];
       run(...params: unknown[]): { changes?: number };
-    }
+    },
+    private readonly params: unknown[] = []
   ) {}
 
   bind(...values: unknown[]) {
-    this.params = values;
-    return this;
+    return new SqliteStatementAdapter(this.statement, values);
   }
 
   async first<T>(): Promise<T | null> {
@@ -43,6 +42,10 @@ class SqliteStatementAdapter {
   }
 
   async run(): Promise<{ meta: { changes?: number } }> {
+    return this.runSync();
+  }
+
+  runSync(): { meta: { changes?: number } } {
     const result = this.statement.run(...this.params);
     return { meta: { changes: result.changes } };
   }
@@ -51,6 +54,7 @@ class SqliteStatementAdapter {
 class SqliteDatabaseAdapter implements DatabaseAdapter {
   constructor(
     private readonly db: {
+      exec(sql: string): void;
       prepare(sql: string): {
         get(...params: unknown[]): unknown;
         all(...params: unknown[]): unknown[];
@@ -64,6 +68,30 @@ class SqliteDatabaseAdapter implements DatabaseAdapter {
     return new SqliteStatementAdapter(this.db.prepare(sql));
   }
 
+  async batch(statements: SqlStatement[]): Promise<void> {
+    if (statements.length === 0) return;
+    // Run the whole batch synchronously so no other request can observe a
+    // half-applied transaction on this shared connection.
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const statement of statements) {
+        if (statement instanceof SqliteStatementAdapter) {
+          statement.runSync();
+        } else {
+          await statement.run();
+        }
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      try {
+        this.db.exec("ROLLBACK");
+      } catch {
+        // SQLite may already have rolled the transaction back.
+      }
+      throw error;
+    }
+  }
+
   close() {
     this.db.close();
   }
@@ -72,5 +100,6 @@ class SqliteDatabaseAdapter implements DatabaseAdapter {
 export function createSqliteDatabaseAdapter(sqlitePath: string): DatabaseAdapter {
   const db = new DatabaseSync(sqlitePath);
   db.exec("PRAGMA foreign_keys = ON");
+  db.exec("PRAGMA busy_timeout = 5000");
   return new SqliteDatabaseAdapter(db);
 }

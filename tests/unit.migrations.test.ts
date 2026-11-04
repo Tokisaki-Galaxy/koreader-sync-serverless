@@ -39,10 +39,18 @@ describe("migrations", () => {
         .prepare("PRAGMA table_info(statistics_snapshot)")
         .all<{ name: string }>();
       expect(columnNames(statisticsColumns)).toContain("statistics_summary_json");
+      expect(columnNames(statisticsColumns)).toContain("revision");
 
       const deviceColumns = await db.prepare("PRAGMA table_info(user_devices)").all<{ name: string }>();
       expect(columnNames(deviceColumns)).toEqual(
         expect.arrayContaining(["user_id", "device_key", "device", "device_id", "alias", "hidden"])
+      );
+
+      const chunkColumns = await db
+        .prepare("PRAGMA table_info(statistics_snapshot_chunk)")
+        .all<{ name: string }>();
+      expect(columnNames(chunkColumns)).toEqual(
+        expect.arrayContaining(["user_id", "kind", "chunk_index", "data"])
       );
 
       const applied = await db
@@ -55,6 +63,8 @@ describe("migrations", () => {
         "0004_progress_metadata",
         "0005_user_devices",
         "0006_user_devices_backfill",
+        "0007_statistics_snapshot_chunks",
+        "0008_statistics_revision",
       ]);
     } finally {
       db.close?.();
@@ -82,6 +92,8 @@ describe("migrations", () => {
         "0004_progress_metadata",
         "0005_user_devices",
         "0006_user_devices_backfill",
+        "0007_statistics_snapshot_chunks",
+        "0008_statistics_revision",
       ]);
     } finally {
       db.close?.();

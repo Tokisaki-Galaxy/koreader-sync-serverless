@@ -1,0 +1,1 @@
+ALTER TABLE statistics_snapshot ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;

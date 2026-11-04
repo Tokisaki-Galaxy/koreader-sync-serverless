@@ -5,6 +5,7 @@ import { parsePbkdf2Iterations } from "../src/services/common";
 import { getDatabaseInitStatus, getStatisticsSnapshot, listAllProgressByUser, upsertStatisticsSnapshot } from "../src/db";
 import { D1DatabaseAdapter } from "../src/database/d1Adapter";
 import { STATISTICS_SUMMARY_VERSION } from "../src/services/statistics";
+import { MAX_SNAPSHOT_BYTES } from "../src/services/snapshotChunks";
 import { createMockEnv, readSessionExpiry, seedSession } from "./helpers/mock-db";
 import { getCookieHeaderFromResponse } from "./helpers/http";
 
@@ -596,6 +597,127 @@ describe("worker integration", () => {
     expect(bookDetailData.book.daily_history).toHaveLength(1);
     expect(bookDetailData.book.recent_sessions).toHaveLength(1);
     expect(bookDetailData.book.reading_speed.seconds_per_page).toBe(2.2);
+  });
+
+  it("accepts a multi-megabyte statistics snapshot and reads it back", async () => {
+    const env = createMockEnv();
+    const md5Password = "5f4dcc3b5aa765d61d8327deb882cf99";
+    const hash = await hashPassword(
+      md5Password,
+      "bigstats",
+      env.PASSWORD_PEPPER,
+      parsePbkdf2Iterations(env)
+    );
+    await env.DB.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)")
+      .bind("bigstats", hash)
+      .run();
+
+    const now = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
+    const pageStatData = Array.from({ length: 42000 }, (_, index) => ({
+      page: (index % 500) + 1,
+      start_time: now + index * 60,
+      duration: 45,
+      total_pages: 500,
+    }));
+    const snapshot = {
+      books: [
+        {
+          md5: "d".repeat(32),
+          title: "A very large library entry " + "书".repeat(200000),
+          authors: "Big Author",
+          notes: 0,
+          last_open: now + pageStatData.length * 60,
+          highlights: 0,
+          pages: 500,
+          series: "",
+          language: "en",
+          total_read_time: pageStatData.length * 45,
+          total_read_pages: pageStatData.length,
+          page_stat_data: pageStatData,
+        },
+      ],
+    };
+    const body = JSON.stringify({
+      schema_version: 20221111,
+      device: "Kindle",
+      device_id: "big-1",
+      snapshot,
+    });
+    expect(new TextEncoder().encode(body).length).toBeGreaterThan(2 * 1024 * 1024);
+
+    const statsHeaders = {
+      "x-auth-user": "bigstats",
+      "x-auth-key": md5Password,
+      "content-type": "application/json",
+      "x-client-version": "y-anna-1.0",
+      "User-Agent": "Mozilla/DONTLIKE/ANYTHING",
+    };
+    const putRes = await app.request(
+      "/syncs/statistics",
+      { method: "PUT", headers: statsHeaders, body },
+      env
+    );
+    expect(putRes.status).toBe(200);
+    const putData = await putRes.json();
+    expect(putData.snapshot.books).toHaveLength(1);
+    expect(putData.snapshot.books[0].page_stat_data).toHaveLength(42000);
+
+    const webLogin = await app.request(
+      "/web/auth/login",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "bigstats", password: "password" }),
+      },
+      env
+    );
+    const cookie = getCookieHeaderFromResponse(webLogin, "ks_session");
+
+    const exportRes = await app.request("/web/export/data", { headers: { cookie } }, env);
+    expect(exportRes.status).toBe(200);
+    const exportData = await exportRes.json();
+    expect(exportData.statistics.snapshot.books).toHaveLength(1);
+    expect(exportData.statistics.snapshot.books[0].page_stat_data).toHaveLength(42000);
+    expect(exportData.statistics.snapshot.books[0].title).toBe(snapshot.books[0].title);
+
+    const statsRes = await app.request("/web/stats", { headers: { cookie } }, env);
+    expect(statsRes.status).toBe(200);
+    await expect(statsRes.json()).resolves.toMatchObject({
+      readingStatistics: { totalBooks: 1 },
+    });
+  });
+
+  it("rejects an oversized statistics payload before parsing it", async () => {
+    const env = createMockEnv();
+    const md5Password = "5f4dcc3b5aa765d61d8327deb882cf99";
+    const hash = await hashPassword(
+      md5Password,
+      "toolarge",
+      env.PASSWORD_PEPPER,
+      parsePbkdf2Iterations(env)
+    );
+    await env.DB.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)")
+      .bind("toolarge", hash)
+      .run();
+
+    const res = await app.request(
+      "/syncs/statistics",
+      {
+        method: "PUT",
+        headers: {
+          "x-auth-user": "toolarge",
+          "x-auth-key": md5Password,
+          "content-type": "application/json",
+          "x-client-version": "y-anna-1.0",
+          "User-Agent": "Mozilla/DONTLIKE/ANYTHING",
+          "content-length": String(MAX_SNAPSHOT_BYTES + 1),
+        },
+        body: "{}",
+      },
+      env
+    );
+    expect(res.status).toBe(413);
+    await expect(res.json()).resolves.toEqual({ message: "Statistics snapshot too large" });
   });
 
   it("accepts admin cookie computed from token and pepper", async () => {
@@ -1234,6 +1356,42 @@ describe("worker integration", () => {
         env
       );
       expect(res.status).toBe(400);
+    });
+
+    it("rejects invalid statistics before writing progress", async () => {
+      const env = createMockEnv();
+      const cookie = await loginAndSeed(env);
+      const res = await app.request(
+        "/web/import",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({
+            progress: [
+              {
+                document: "should-not-land",
+                progress: "page:1",
+                percentage: 0.1,
+                device: "Imported",
+                device_id: "",
+                timestamp: 1700000000,
+              },
+            ],
+            statistics: {
+              schema_version: 20221111,
+              device: "imported",
+              device_id: "",
+              snapshot: { books: [] },
+            },
+          }),
+        },
+        env
+      );
+      expect(res.status).toBe(400);
+
+      const me = await (await app.request("/web/me", { headers: { cookie } }, env)).json();
+      const rows = await listAllProgressByUser(env.DB, me.id);
+      expect(rows.some((row) => row.document === "should-not-land")).toBe(false);
     });
 
     it("reports only newly added books when merging statistics", async () => {

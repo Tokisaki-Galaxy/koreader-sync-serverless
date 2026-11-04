@@ -21,6 +21,7 @@ type StatisticsSnapshot = {
   device_id: string;
   snapshot_json: string;
   statistics_summary_json: string | null;
+  revision: number;
   updated_at: number;
 };
 
@@ -51,21 +52,31 @@ const MOCK_COLUMNS: Record<string, string[]> = {
     "device_id",
     "snapshot_json",
     "statistics_summary_json",
+    "revision",
     "updated_at",
   ],
+  statistics_snapshot_chunk: ["user_id", "kind", "chunk_index", "data"],
 };
 
-class MockD1Statement {
-  private bound: unknown[] = [];
+const MOCK_ROW_LIMIT_BYTES = 2_000_000;
+const mockEncoder = new TextEncoder();
 
+function assertRowSize(value: unknown, label: string): void {
+  if (value == null) return;
+  if (mockEncoder.encode(String(value)).length > MOCK_ROW_LIMIT_BYTES) {
+    throw new Error(`${label} exceeds the D1 row size limit`);
+  }
+}
+
+class MockD1Statement {
   constructor(
     private readonly db: MockD1Database,
-    private readonly sql: string
+    private readonly sql: string,
+    private readonly bound: unknown[] = []
   ) {}
 
   bind(...values: unknown[]) {
-    this.bound = values;
-    return this;
+    return new MockD1Statement(this.db, this.sql, values);
   }
 
   async first<T>(): Promise<T | null> {
@@ -87,6 +98,7 @@ class MockD1Database {
   private progress: Progress[] = [];
   private sessions: Session[] = [];
   private statistics = new Map<number, StatisticsSnapshot>();
+  private snapshotChunks = new Map<number, Map<string, string[]>>();
   private userSeq = 1;
   private initialized = true;
   private missingTables = new Set<string>();
@@ -108,10 +120,55 @@ class MockD1Database {
     return new MockD1Statement(this, sql);
   }
 
+  private cloneState() {
+    return {
+      users: this.users.map((row) => ({ ...row })),
+      progress: this.progress.map((row) => ({ ...row })),
+      sessions: this.sessions.map((row) => ({ ...row })),
+      statistics: new Map([...this.statistics].map(([key, row]) => [key, { ...row }])),
+      snapshotChunks: new Map(
+        [...this.snapshotChunks].map(([key, byKind]) => [
+          key,
+          new Map([...byKind].map(([kind, chunks]) => [kind, [...chunks]])),
+        ])
+      ),
+      userSeq: this.userSeq,
+      initialized: this.initialized,
+      missingTables: new Set(this.missingTables),
+      appliedVersions: new Set(this.appliedVersions),
+    };
+  }
+
+  async batch(statements: MockD1Statement[]) {
+    const backup = this.cloneState();
+    const results: Array<{ meta: { changes: number } }> = [];
+    try {
+      for (const statement of statements) {
+        results.push(await statement.run());
+      }
+      return results;
+    } catch (error) {
+      this.users = backup.users;
+      this.progress = backup.progress;
+      this.sessions = backup.sessions;
+      this.statistics = backup.statistics;
+      this.snapshotChunks = backup.snapshotChunks;
+      this.userSeq = backup.userSeq;
+      this.initialized = backup.initialized;
+      this.missingTables = backup.missingTables;
+      this.appliedVersions = backup.appliedVersions;
+      throw error;
+    }
+  }
+
   // Test-only accessor so specs can assert on session persistence without faking SQL.
   getSessionExpiry(tokenHash: string): number | null {
     const session = this.sessions.find((s) => s.token_hash === tokenHash);
     return session ? session.expires_at : null;
+  }
+
+  getChunkCount(userId: number, kind: string): number {
+    return this.snapshotChunks.get(userId)?.get(kind)?.length ?? 0;
   }
 
   private normalizeSql(sql: string): string {
@@ -233,6 +290,7 @@ class MockD1Database {
       this.progress = this.progress.filter((p) => p.user_id !== userId);
       this.sessions = this.sessions.filter((s) => s.user_id !== userId);
       this.statistics.delete(userId);
+      this.snapshotChunks.delete(userId);
       return { meta: { changes: before - this.users.length } };
     }
 
@@ -424,7 +482,39 @@ class MockD1Database {
         .sort((a, b) => b.count - a.count);
     }
 
-    if (q.includes("select schema_version, device, device_id, snapshot_json, statistics_summary_json from statistics_snapshot where user_id = ?")) {
+    if (q.startsWith("delete from statistics_snapshot_chunk where user_id = ? and kind = ?")) {
+      const userId = Number(bound[0]);
+      const kind = String(bound[1] ?? "");
+      this.snapshotChunks.get(userId)?.delete(kind);
+      return { meta: { changes: 1 } };
+    }
+
+    if (q.startsWith("delete from statistics_snapshot_chunk where user_id = ?")) {
+      this.snapshotChunks.delete(Number(bound[0]));
+      return { meta: { changes: 1 } };
+    }
+
+    if (q.includes("select data from statistics_snapshot_chunk") && q.includes("order by chunk_index")) {
+      const userId = Number(bound[0]);
+      const kind = String(bound[1] ?? "");
+      const chunks = this.snapshotChunks.get(userId)?.get(kind) ?? [];
+      return chunks.map((data) => ({ data }));
+    }
+
+    if (q.startsWith("insert into statistics_snapshot_chunk (user_id, kind, chunk_index, data)")) {
+      const userId = Number(bound[0]);
+      const kind = String(bound[1] ?? "");
+      const data = String(bound[3] ?? "");
+      assertRowSize(data, "statistics chunk");
+      const byKind = this.snapshotChunks.get(userId) ?? new Map<string, string[]>();
+      const chunks = byKind.get(kind) ?? [];
+      chunks[Number(bound[2])] = data;
+      byKind.set(kind, chunks);
+      this.snapshotChunks.set(userId, byKind);
+      return { meta: { changes: 1 } };
+    }
+
+    if (q.includes("select schema_version, device, device_id, snapshot_json, statistics_summary_json, revision from statistics_snapshot where user_id = ?")) {
       const userId = Number(bound[0]);
       const row = this.statistics.get(userId);
       if (!row) return null;
@@ -434,11 +524,25 @@ class MockD1Database {
         device_id: row.device_id,
         snapshot_json: row.snapshot_json,
         statistics_summary_json: row.statistics_summary_json,
+        revision: row.revision,
       };
+    }
+
+    if (q.startsWith("update statistics_snapshot set statistics_summary_json = ? where user_id = ? and revision = ?")) {
+      const userId = Number(bound[1]);
+      const expectedRevision = Number(bound[2]);
+      const row = this.statistics.get(userId);
+      if (!row || row.revision !== expectedRevision) return { meta: { changes: 0 } };
+      assertRowSize(bound[0], "statistics summary");
+      row.statistics_summary_json = String(bound[0] ?? "");
+      return { meta: { changes: 1 } };
     }
 
     if (q.startsWith("insert into statistics_snapshot") && q.includes("on conflict(user_id) do update set")) {
       const userId = Number(bound[0]);
+      const existing = this.statistics.get(userId);
+      assertRowSize(bound[4], "statistics snapshot");
+      assertRowSize(bound[5], "statistics summary");
       this.statistics.set(userId, {
         user_id: userId,
         schema_version: Number(bound[1]),
@@ -446,6 +550,7 @@ class MockD1Database {
         device_id: String(bound[3] ?? ""),
         snapshot_json: String(bound[4] ?? ""),
         statistics_summary_json: bound[5] == null ? null : String(bound[5]),
+        revision: existing ? existing.revision + 1 : 1,
         updated_at: now,
       });
       return { meta: { changes: 1 } };

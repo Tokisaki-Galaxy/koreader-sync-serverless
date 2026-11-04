@@ -1,13 +1,21 @@
-import type { DatabaseAdapter } from "./database/adapter";
+import type { DatabaseAdapter, SqlStatement } from "./database/adapter";
 import type { DeviceUsage, ProgressRow, UserDeviceRow, UserRow } from "./types";
 import { runMigrations } from "./migrations";
 import { MIGRATIONS } from "./migrations-bundle";
+import { joinSnapshotChunks, snapshotByteLength, splitSnapshotJson, SNAPSHOT_CHUNK_BYTES } from "./services/snapshotChunks";
 
-const REQUIRED_TABLES = ["users", "progress", "sessions", "statistics_snapshot", "user_devices"] as const;
+const REQUIRED_TABLES = [
+  "users",
+  "progress",
+  "sessions",
+  "statistics_snapshot",
+  "statistics_snapshot_chunk",
+  "user_devices",
+] as const;
 
 const REQUIRED_COLUMNS: Array<{ table: string; columns: string[] }> = [
   { table: "progress", columns: ["metadata"] },
-  { table: "statistics_snapshot", columns: ["statistics_summary_json"] },
+  { table: "statistics_snapshot", columns: ["statistics_summary_json", "revision"] },
 ];
 
 export async function getDatabaseInitStatus(
@@ -179,30 +187,128 @@ export async function getLatestProgressByDocument(
   return row ?? null;
 }
 
-export async function getStatisticsSnapshot(
-  db: DatabaseAdapter,
-  userId: number
-): Promise<{
+export interface StatisticsSnapshotMeta {
   schema_version: number;
   device: string;
   device_id: string;
   snapshot_json: string;
   statistics_summary_json: string | null;
-} | null> {
+  revision: number;
+}
+
+// Snapshots above this size are split across `statistics_snapshot_chunk` rows.
+// The value stays well below D1's 2 MB row limit so a single row can never
+// overflow, and the metadata row keeps the small fields.
+export const INLINE_SNAPSHOT_MAX_BYTES = SNAPSHOT_CHUNK_BYTES;
+
+export async function getStatisticsSnapshotMeta(
+  db: DatabaseAdapter,
+  userId: number
+): Promise<StatisticsSnapshotMeta | null> {
   const row = await db.prepare(
-    `SELECT schema_version, device, device_id, snapshot_json, statistics_summary_json
+    `SELECT schema_version, device, device_id, snapshot_json, statistics_summary_json, revision
      FROM statistics_snapshot
      WHERE user_id = ?`
   )
     .bind(userId)
-    .first<{
-      schema_version: number;
-      device: string;
-      device_id: string;
-      snapshot_json: string;
-      statistics_summary_json: string | null;
-    }>();
+    .first<StatisticsSnapshotMeta>();
   return row ?? null;
+}
+
+type StatisticsChunkKind = "snapshot" | "summary";
+
+async function readStatisticsChunks(
+  db: DatabaseAdapter,
+  userId: number,
+  kind: StatisticsChunkKind
+): Promise<string[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT data FROM statistics_snapshot_chunk
+       WHERE user_id = ? AND kind = ?
+       ORDER BY chunk_index`
+    )
+    .bind(userId, kind)
+    .all<{ data: string }>();
+  return (results ?? []).map((row) => row.data);
+}
+
+function chunkValue(value: string): string[] | null {
+  if (
+    value.length <= INLINE_SNAPSHOT_MAX_BYTES &&
+    snapshotByteLength(value) <= INLINE_SNAPSHOT_MAX_BYTES
+  ) {
+    return null;
+  }
+  return splitSnapshotJson(value);
+}
+
+function appendChunkStatements(
+  statements: SqlStatement[],
+  db: DatabaseAdapter,
+  userId: number,
+  kind: StatisticsChunkKind,
+  chunks: string[]
+): void {
+  const insertChunk = db.prepare(
+    "INSERT INTO statistics_snapshot_chunk (user_id, kind, chunk_index, data) VALUES (?, ?, ?, ?)"
+  );
+  for (let index = 0; index < chunks.length; index += 1) {
+    statements.push(insertChunk.bind(userId, kind, index, chunks[index]));
+  }
+}
+
+export async function loadStatisticsSnapshotJson(
+  db: DatabaseAdapter,
+  userId: number,
+  meta?: StatisticsSnapshotMeta | null,
+  allowRetry = true
+): Promise<string> {
+  const row = meta === undefined ? await getStatisticsSnapshotMeta(db, userId) : meta;
+  if (!row) return "";
+  if (row.snapshot_json) return row.snapshot_json;
+  const chunks = await readStatisticsChunks(db, userId, "snapshot");
+  if (chunks.length > 0) return joinSnapshotChunks(chunks);
+  if (allowRetry) {
+    // A concurrent sync may have switched this user back to inline storage
+    // between the metadata read and the chunk read.
+    const fresh = await getStatisticsSnapshotMeta(db, userId);
+    if (fresh && fresh.revision !== row.revision) {
+      return loadStatisticsSnapshotJson(db, userId, fresh, false);
+    }
+  }
+  return "";
+}
+
+export async function loadStatisticsSummaryJson(
+  db: DatabaseAdapter,
+  userId: number,
+  meta?: StatisticsSnapshotMeta | null,
+  allowRetry = true
+): Promise<string | null> {
+  const row = meta === undefined ? await getStatisticsSnapshotMeta(db, userId) : meta;
+  if (!row || row.statistics_summary_json === null) return null;
+  if (row.statistics_summary_json !== "") return row.statistics_summary_json;
+  const chunks = await readStatisticsChunks(db, userId, "summary");
+  if (chunks.length > 0) return joinSnapshotChunks(chunks);
+  if (allowRetry) {
+    const fresh = await getStatisticsSnapshotMeta(db, userId);
+    if (fresh && fresh.revision !== row.revision) {
+      return loadStatisticsSummaryJson(db, userId, fresh, false);
+    }
+  }
+  return null;
+}
+
+export async function getStatisticsSnapshot(
+  db: DatabaseAdapter,
+  userId: number
+): Promise<StatisticsSnapshotMeta | null> {
+  const row = await getStatisticsSnapshotMeta(db, userId);
+  if (!row) return null;
+  if (row.snapshot_json) return row;
+  const snapshotJson = await loadStatisticsSnapshotJson(db, userId, row);
+  return { ...row, snapshot_json: snapshotJson };
 }
 
 export async function upsertStatisticsSnapshot(
@@ -214,20 +320,64 @@ export async function upsertStatisticsSnapshot(
   snapshotJson: string,
   summaryJson: string | null
 ): Promise<void> {
-  await db.prepare(
-    `INSERT INTO statistics_snapshot (
-      user_id, schema_version, device, device_id, snapshot_json, statistics_summary_json, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, unixepoch())
-    ON CONFLICT(user_id) DO UPDATE SET
-      schema_version = excluded.schema_version,
-      device = excluded.device,
-      device_id = excluded.device_id,
-      snapshot_json = excluded.snapshot_json,
-      statistics_summary_json = excluded.statistics_summary_json,
-      updated_at = unixepoch()`
-  )
-    .bind(userId, schemaVersion, device, deviceId, snapshotJson, summaryJson)
+  const snapshotChunks = chunkValue(snapshotJson);
+  const summaryChunks = summaryJson === null ? null : chunkValue(summaryJson);
+
+  const statements: SqlStatement[] = [
+    db.prepare("DELETE FROM statistics_snapshot_chunk WHERE user_id = ?").bind(userId),
+  ];
+  if (snapshotChunks) {
+    appendChunkStatements(statements, db, userId, "snapshot", snapshotChunks);
+  }
+  if (summaryChunks) {
+    appendChunkStatements(statements, db, userId, "summary", summaryChunks);
+  }
+
+  statements.push(
+    db
+      .prepare(
+        `INSERT INTO statistics_snapshot (
+          user_id, schema_version, device, device_id, snapshot_json, statistics_summary_json, revision, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, unixepoch())
+        ON CONFLICT(user_id) DO UPDATE SET
+          schema_version = excluded.schema_version,
+          device = excluded.device,
+          device_id = excluded.device_id,
+          snapshot_json = excluded.snapshot_json,
+          statistics_summary_json = excluded.statistics_summary_json,
+          revision = statistics_snapshot.revision + 1,
+          updated_at = unixepoch()`
+      )
+      .bind(
+        userId,
+        schemaVersion,
+        device,
+        deviceId,
+        snapshotChunks ? "" : snapshotJson,
+        summaryChunks ? "" : summaryJson
+      )
+  );
+
+  await db.batch(statements);
+}
+
+export async function updateStatisticsSummary(
+  db: DatabaseAdapter,
+  userId: number,
+  summaryJson: string,
+  expectedRevision: number
+): Promise<boolean> {
+  // Lazy rebuilds only persist inline summaries. Oversized summaries are
+  // recomputed on demand instead of risking a large write against a snapshot
+  // that may have changed since it was read.
+  if (chunkValue(summaryJson)) return false;
+  const result = await db
+    .prepare(
+      "UPDATE statistics_snapshot SET statistics_summary_json = ? WHERE user_id = ? AND revision = ?"
+    )
+    .bind(summaryJson, userId, expectedRevision)
     .run();
+  return (result.meta.changes ?? 0) > 0;
 }
 
 export async function getUserById(

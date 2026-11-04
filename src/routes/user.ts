@@ -43,6 +43,7 @@ import {
   getDbFormatPayload,
   progressDbDataToProgressRows,
 } from "../services/dbformat";
+import { MAX_IMPORT_BYTES, MAX_SNAPSHOT_BYTES, snapshotByteLength } from "../services/snapshotChunks";
 import { renderUserPage } from "../ui/userPage";
 import type { StatisticsBookRow, UserLoginRequest } from "../types";
 import type { AppEnv } from "../context";
@@ -136,6 +137,14 @@ router.post("/web/import", async (c) => {
   const auth = await authWebUser(c);
   if (!auth) return c.json({ error: "Unauthorized" }, 401);
 
+  const declaredLength = c.req.header("content-length");
+  if (declaredLength !== undefined) {
+    const parsedLength = Number(declaredLength);
+    if (Number.isFinite(parsedLength) && parsedLength > MAX_IMPORT_BYTES) {
+      return c.json({ error: "Import payload too large" }, 413);
+    }
+  }
+
   let body: {
     progress?: unknown;
     statistics?: {
@@ -156,30 +165,16 @@ router.post("/web/import", async (c) => {
     statisticsBooks: 0,
   };
 
-  if (body.progress !== undefined) {
-    if (!Array.isArray(body.progress)) return badRequest("progress must be an array");
-    const rows = progressDbDataToProgressRows({ progress: body.progress });
-    for (const row of rows) {
-      if (!row.document || typeof row.document !== "string") continue;
-      const timestamp = Number.isFinite(Number(row.timestamp)) ? Number(row.timestamp) : Math.floor(Date.now() / 1000);
-      const device = String(row.device ?? "").trim() || "Imported";
-      const deviceId = String(row.device_id ?? "");
-      await upsertProgress(c.get("db"), auth.userId, {
-        document: row.document,
-        progress: String(row.progress ?? ""),
-        percentage: Number.isFinite(Number(row.percentage)) ? Number(row.percentage) : 0,
-        device,
-        device_id: deviceId,
-        timestamp,
-      });
-      try {
-        await touchUserDevice(c.get("db"), auth.userId, device, deviceId, timestamp);
-      } catch {
-        // Device bookkeeping must never break the import.
-      }
-      imported.progress += 1;
-    }
-  }
+  type PendingStatistics = {
+    schemaVersion: number;
+    device: string;
+    deviceId: string;
+    explicitDevice: boolean;
+    mergedJson: string;
+    summaryJson: string;
+    books: number;
+  };
+  let pendingStatistics: PendingStatistics | null = null;
 
   if (body.statistics !== undefined) {
     const raw = body.statistics;
@@ -206,30 +201,82 @@ router.post("/web/import", async (c) => {
     const deviceId = typeof raw.device_id === "string" ? raw.device_id : "";
 
     const existing = await getStatisticsSnapshot(c.get("db"), auth.userId);
+    if (existing && !existing.snapshot_json) {
+      return c.json({ error: "Statistics temporarily unavailable" }, 503);
+    }
     const existingSnapshot = existing ? parseSnapshotFromJson(existing.snapshot_json) : null;
+    if (existing && !existingSnapshot) {
+      return c.json({ error: "Statistics snapshot is corrupted" }, 500);
+    }
     const mergedSnapshot = mergeSnapshots(existingSnapshot, incomingSnapshot);
+    const mergedJson = JSON.stringify(mergedSnapshot);
+    if (snapshotByteLength(mergedJson) > MAX_SNAPSHOT_BYTES) {
+      return c.json({ error: "Statistics snapshot too large" }, 413);
+    }
     const summary = buildStatisticsSummary(mergedSnapshot);
-
-    await upsertStatisticsSnapshot(
-      c.get("db"),
-      auth.userId,
+    // Report books actually added by this import (new md5s), not the total
+    // merged count, so an empty import can't masquerade as a success.
+    const existingMd5s = new Set((existingSnapshot?.books ?? []).map((b) => b.md5));
+    pendingStatistics = {
       schemaVersion,
       device,
       deviceId,
-      JSON.stringify(mergedSnapshot),
-      JSON.stringify(summary)
-    );
-    if (explicitDevice) {
+      explicitDevice: explicitDevice.length > 0,
+      mergedJson,
+      summaryJson: JSON.stringify(summary),
+      books: mergedSnapshot.books.filter((b) => !existingMd5s.has(b.md5)).length,
+    };
+  }
+
+  if (body.progress !== undefined) {
+    if (!Array.isArray(body.progress)) return badRequest("progress must be an array");
+    const rows = progressDbDataToProgressRows({ progress: body.progress });
+    for (const row of rows) {
+      if (!row.document || typeof row.document !== "string") continue;
+      const timestamp = Number.isFinite(Number(row.timestamp)) ? Number(row.timestamp) : Math.floor(Date.now() / 1000);
+      const device = String(row.device ?? "").trim() || "Imported";
+      const deviceId = String(row.device_id ?? "");
+      await upsertProgress(c.get("db"), auth.userId, {
+        document: row.document,
+        progress: String(row.progress ?? ""),
+        percentage: Number.isFinite(Number(row.percentage)) ? Number(row.percentage) : 0,
+        device,
+        device_id: deviceId,
+        timestamp,
+      });
       try {
-        await touchUserDevice(c.get("db"), auth.userId, device, deviceId, Math.floor(Date.now() / 1000));
+        await touchUserDevice(c.get("db"), auth.userId, device, deviceId, timestamp);
+      } catch {
+        // Device bookkeeping must never break the import.
+      }
+      imported.progress += 1;
+    }
+  }
+
+  if (pendingStatistics) {
+    await upsertStatisticsSnapshot(
+      c.get("db"),
+      auth.userId,
+      pendingStatistics.schemaVersion,
+      pendingStatistics.device,
+      pendingStatistics.deviceId,
+      pendingStatistics.mergedJson,
+      pendingStatistics.summaryJson
+    );
+    if (pendingStatistics.explicitDevice) {
+      try {
+        await touchUserDevice(
+          c.get("db"),
+          auth.userId,
+          pendingStatistics.device,
+          pendingStatistics.deviceId,
+          Math.floor(Date.now() / 1000)
+        );
       } catch {
         // Device bookkeeping must never break the import.
       }
     }
-    // Report books actually added by this import (new md5s), not the total
-    // merged count, so an empty import can't masquerade as a success.
-    const existingMd5s = new Set((existingSnapshot?.books ?? []).map((b) => b.md5));
-    imported.statisticsBooks = mergedSnapshot.books.filter((b) => !existingMd5s.has(b.md5)).length;
+    imported.statisticsBooks = pendingStatistics.books;
   }
 
   if (imported.progress === 0 && imported.statisticsBooks === 0) {
