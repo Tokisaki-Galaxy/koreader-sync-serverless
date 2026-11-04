@@ -10,7 +10,8 @@ export function logServerError(
   const requestId = c.get("requestId") || "unknown";
   const method = c.req.method;
   const route = c.req.path;
-  const message = error instanceof Error ? error.message : String(error);
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const message = error instanceof SyntaxError ? "Invalid JSON body" : rawMessage;
   const effectiveUserId = userId ?? c.get("userId") ?? null;
   console.error(
     JSON.stringify({

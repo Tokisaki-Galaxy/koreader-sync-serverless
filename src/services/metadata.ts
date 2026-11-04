@@ -3,10 +3,11 @@ const MAX_METADATA_FIELD_BYTES = 512;
 const utf8Encoder = new TextEncoder();
 
 function truncateUtf8(value: string, maxBytes: number): string {
-  if (utf8Encoder.encode(value).length <= maxBytes) return value;
+  const source = value.length > maxBytes * 4 ? value.slice(0, maxBytes * 4) : value;
+  if (utf8Encoder.encode(source).length <= maxBytes) return source;
   let result = "";
   let used = 0;
-  for (const char of value) {
+  for (const char of source) {
     const charBytes = utf8Encoder.encode(char).length;
     if (used + charBytes > maxBytes) break;
     result += char;
@@ -47,7 +48,7 @@ export function parseProgressMetadata(
       if (typeof field === "string") {
         const trimmed = field.trim();
         if (trimmed.length > 0) {
-          metadata[key] = trimmed;
+          metadata[key] = truncateUtf8(trimmed, MAX_METADATA_FIELD_BYTES);
         }
       }
     }

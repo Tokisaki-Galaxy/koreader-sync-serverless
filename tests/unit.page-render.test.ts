@@ -41,6 +41,11 @@ describe("user page render", () => {
     expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
     const html = await res.text();
     expect(html).toMatch(/<script nonce="[0-9a-f]+">/);
+    const cspNonce = csp.match(/'nonce-([0-9a-f]+)'/);
+    const htmlNonce = html.match(/<script nonce="([0-9a-f]+)">/);
+    expect(cspNonce).not.toBeNull();
+    expect(htmlNonce).not.toBeNull();
+    expect(cspNonce![1]).toBe(htmlNonce![1]);
   });
 
   it("sets a nonce-based CSP on the admin page", async () => {
@@ -52,5 +57,10 @@ describe("user page render", () => {
     expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
     const html = await res.text();
     expect(html).toMatch(/<script nonce="[0-9a-f]+">/);
+    const cspNonce = csp.match(/'nonce-([0-9a-f]+)'/);
+    const htmlNonce = html.match(/<script nonce="([0-9a-f]+)">/);
+    expect(cspNonce).not.toBeNull();
+    expect(htmlNonce).not.toBeNull();
+    expect(cspNonce![1]).toBe(htmlNonce![1]);
   });
 });

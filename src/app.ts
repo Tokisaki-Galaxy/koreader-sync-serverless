@@ -24,6 +24,7 @@ export function createApp() {
   app.use("*", async (c, next) => {
     await next();
     withSecurityHeaders(c.res.headers, c.get("cspNonce"));
+    c.res.headers.set("x-request-id", c.get("requestId"));
   });
 
   app.route("/", assetRoutes);

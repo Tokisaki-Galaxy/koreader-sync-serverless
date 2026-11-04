@@ -53,5 +53,28 @@ describe("error logging", () => {
     );
     expect(invalid.status).toBe(200);
     expect(invalid.headers.get("x-request-id")).toMatch(/[0-9a-f-]{36}/);
+
+    const tooLong = await app.request(
+      "/healthcheck",
+      { headers: { "x-request-id": "a".repeat(129) } },
+      env
+    );
+    expect(tooLong.status).toBe(200);
+    expect(tooLong.headers.get("x-request-id")).toMatch(/[0-9a-f-]{36}/);
+  });
+
+  it("keeps the request id on raw 400 responses", async () => {
+    const env = createMockEnv();
+    const res = await app.request(
+      "/users/create",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "not-json",
+      },
+      env
+    );
+    expect(res.status).toBe(400);
+    expect(res.headers.get("x-request-id")).toMatch(/[0-9a-f-]{36}/);
   });
 });

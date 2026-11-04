@@ -40,4 +40,10 @@ describe("progress metadata", () => {
     expect(parseProgressMetadata("not json")).toBeNull();
     expect(parseProgressMetadata(null)).toBeNull();
   });
+
+  it("truncates parsed fields", () => {
+    const parsed = parseProgressMetadata(JSON.stringify({ title: "书".repeat(300) }));
+    expect(parsed).not.toBeNull();
+    expect(new TextEncoder().encode(parsed!.title).length).toBeLessThanOrEqual(512);
+  });
 });
