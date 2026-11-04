@@ -36,6 +36,24 @@ export async function getDatabaseInitStatus(
       appliedVersions.add(row.version);
     }
   }
+
+  // `wrangler d1 migrations apply` records versions in d1_migrations instead
+  // of schema_migrations. Treat both as proof that a migration was applied.
+  const d1MigrationTable = await db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .bind("d1_migrations")
+    .first<{ name: string }>();
+  if (d1MigrationTable) {
+    try {
+      const rows = await db.prepare("SELECT name FROM d1_migrations").all<{ name: string }>();
+      for (const row of rows.results ?? []) {
+        appliedVersions.add(row.name.replace(/\.sql$/, ""));
+      }
+    } catch {
+      // Keep the schema_migrations result if the D1 table shape is unexpected.
+    }
+  }
+
   for (const migration of MIGRATIONS) {
     if (!appliedVersions.has(migration.version)) {
       missing.push(`migration:${migration.version}`);
@@ -54,9 +72,10 @@ export async function getDatabaseInitStatus(
       }
     } catch {
       // Fail closed: if the column cannot be verified, report it so the admin
-      // UI offers to run migrations instead of hiding the action.
+      // UI offers to run migrations instead of hiding the action. The suffix
+      // distinguishes "not verified" from a confirmed missing column.
       for (const column of requirement.columns) {
-        missing.push(`${requirement.table}.${column}`);
+        missing.push(`${requirement.table}.${column}:unverified`);
       }
     }
   }

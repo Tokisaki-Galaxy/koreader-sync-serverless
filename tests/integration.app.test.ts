@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import app from "../src/index";
 import { hashPassword, sha256 } from "../src/crypto";
 import { parsePbkdf2Iterations } from "../src/services/common";
-import { getStatisticsSnapshot, listAllProgressByUser, upsertStatisticsSnapshot } from "../src/db";
+import { getDatabaseInitStatus, getStatisticsSnapshot, listAllProgressByUser, upsertStatisticsSnapshot } from "../src/db";
+import { D1DatabaseAdapter } from "../src/database/d1Adapter";
 import { STATISTICS_SUMMARY_VERSION } from "../src/services/statistics";
 import { createMockEnv, readSessionExpiry, seedSession } from "./helpers/mock-db";
 import { getCookieHeaderFromResponse } from "./helpers/http";
@@ -15,6 +16,14 @@ describe("worker integration", () => {
     await expect(res.json()).resolves.toEqual({ state: "OK" });
     expect(res.headers.get("x-frame-options")).toBe("DENY");
     expect(res.headers.get("content-security-policy")).toContain("'wasm-unsafe-eval'");
+  });
+
+  it("reports a default mock database as initialized", async () => {
+    const env = createMockEnv();
+    const adapter = new D1DatabaseAdapter(env.DB!);
+    const status = await getDatabaseInitStatus(adapter);
+    expect(status.initialized).toBe(true);
+    expect(status.missingTables).toEqual([]);
   });
 
   it("handles KOReader register + sync + fetch flow", async () => {

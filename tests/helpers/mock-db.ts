@@ -1,4 +1,5 @@
 import type { Env } from "../../src/types";
+import { MIGRATIONS } from "../../src/migrations-bundle";
 
 type User = { id: number; username: string; password_hash: string; created_at: number };
 type Progress = {
@@ -89,11 +90,17 @@ class MockD1Database {
   private userSeq = 1;
   private initialized = true;
   private missingTables = new Set<string>();
+  private appliedVersions = new Set<string>();
 
   constructor(options: MockDbOptions = {}) {
     this.initialized = options.initialized ?? true;
     for (const table of options.missingTables ?? []) {
       this.missingTables.add(table);
+    }
+    if (this.initialized) {
+      for (const migration of MIGRATIONS) {
+        this.appliedVersions.add(migration.version);
+      }
     }
   }
 
@@ -131,6 +138,15 @@ class MockD1Database {
     }
 
     if (q.includes("select version from schema_migrations")) {
+      return kind === "all" ? [...this.appliedVersions].map((version) => ({ version })) : null;
+    }
+
+    if (q.startsWith("insert or ignore into schema_migrations")) {
+      this.appliedVersions.add(String(bound[0] ?? ""));
+      return { meta: { changes: 1 } };
+    }
+
+    if (q.includes("select name from d1_migrations")) {
       return kind === "all" ? [] : null;
     }
 
