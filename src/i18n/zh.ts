@@ -111,6 +111,8 @@ const zh: LocaleMessages = {
     deviceViewAllRecords: "查看全部记录",
     deviceFilterClear: "清除设备筛选",
     deviceNoRecords: "这台设备还没有同步记录。",
+    deviceNoDevices: "还没有任何设备同步过。",
+    deviceAllHidden: "所有设备都已隐藏。",
     deviceActionSaved: "已保存。",
     deviceMerged: "设备已合并。",
     deviceHidden: "设备已隐藏。",

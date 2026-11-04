@@ -109,6 +109,8 @@ export interface UserMessages {
   deviceViewAllRecords: string;
   deviceFilterClear: string;
   deviceNoRecords: string;
+  deviceNoDevices: string;
+  deviceAllHidden: string;
   deviceActionSaved: string;
   deviceMerged: string;
   deviceHidden: string;

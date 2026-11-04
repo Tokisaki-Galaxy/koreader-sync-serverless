@@ -111,6 +111,8 @@ const ja: LocaleMessages = {
     deviceViewAllRecords: "すべての記録を見る",
     deviceFilterClear: "デバイスフィルタを解除",
     deviceNoRecords: "このデバイスの記録はまだありません。",
+    deviceNoDevices: "まだ同期したデバイスがありません。",
+    deviceAllHidden: "すべてのデバイスが非表示です。",
     deviceActionSaved: "保存しました。",
     deviceMerged: "デバイスを統合しました。",
     deviceHidden: "デバイスを非表示にしました。",

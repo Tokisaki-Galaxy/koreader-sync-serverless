@@ -427,6 +427,8 @@ export function renderUserPage(locale: Locale): string {
     .link-btn:hover { text-decoration: underline; }
     .device-dialog-field { display: grid; gap: 6px; margin-top: 10px; }
     .device-dialog-field input, .device-dialog-field select { width: 100%; min-width: 0; }
+    #recordDeviceFilter { flex-wrap: wrap; }
+    #recordDeviceFilterLabel { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
     table {
       width: 100%;
       min-width: 900px;
@@ -924,7 +926,7 @@ export function renderUserPage(locale: Locale): string {
     </div>
   </header>
 
-  <div id="toast-container"></div>
+  <div id="toast-container" role="status" aria-live="polite"></div>
   <div class="container">
     <div class="login-wrapper" id="loginCard">
       <div class="login-card">
@@ -1163,7 +1165,7 @@ export function renderUserPage(locale: Locale): string {
     </div>
   </div>
 
-  <div id="deviceDialog" class="modal-backdrop" aria-hidden="true">
+  <div id="deviceDialog" class="modal-backdrop" aria-hidden="true" inert>
     <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="deviceDialogTitle">
       <div class="modal-header">
         <h3 class="modal-title" id="deviceDialogTitle"></h3>
@@ -1171,7 +1173,7 @@ export function renderUserPage(locale: Locale): string {
       </div>
       <div class="modal-body">
         <p class="text-secondary" id="deviceDialogDescription"></p>
-        <div id="deviceDialogField"></div>
+        <div id="deviceDialogField" class="device-dialog-field"></div>
         <div class="row" style="justify-content:flex-end;margin-top:12px;">
           <button type="button" class="secondary" id="deviceDialogCancelBtn"></button>
           <button type="button" id="deviceDialogConfirmBtn"></button>
@@ -1277,9 +1279,10 @@ export function renderUserPage(locale: Locale): string {
     }
 
     function deviceSharePercent(device, devices) {
-      const total = devices.reduce((sum, item) => sum + Number(item.records || 0), 0);
+      const recordCount = (item) => Number(item.records != null ? item.records : item.count || 0);
+      const total = devices.reduce((sum, item) => sum + recordCount(item), 0);
       if (total <= 0) return 0;
-      return Math.round((Number(device.records || 0) / total) * 100);
+      return Math.round((recordCount(device) / total) * 100);
     }
 
     function truncateId(value, head, tail) {
@@ -1289,21 +1292,32 @@ export function renderUserPage(locale: Locale): string {
       return text.slice(0, head) + '…' + text.slice(-tail);
     }
 
-    function deviceCardHtml(device, share) {
+    function deviceCardHtml(device, share, onlyDevice) {
       const hidden = !!device.hidden;
       const name = deviceDisplayName(device);
-      const records = Number(device.records || 0);
+      const records = Number(device.records != null ? device.records : device.count || 0);
+      const canManage = Number(device.id) > 0;
       const shareHtml = share === null ? '' :
         '<div class="device-share" aria-hidden="true"><span style="width:' + share + '%"></span></div>';
       const badge = hidden
         ? ' <span class="device-hidden-badge">' + escapeHtml(I18N.deviceHiddenBadge) + '</span>'
         : '';
+      const onlyLabel = onlyDevice
+        ? ' · ' + escapeHtml(I18N.deviceOnlyDevice)
+        : '';
+      const actions = canManage
+        ? '<div class="device-actions">' +
+            '<button type="button" class="secondary small" data-device-action="rename" data-device-id="' + escapeHtml(device.id) + '" aria-label="' + escapeHtml(I18N.deviceRename + ': ' + name) + '">' + escapeHtml(I18N.deviceRename) + '</button>' +
+            '<button type="button" class="secondary small" data-device-action="' + (hidden ? 'unhide' : 'hide') + '" data-device-id="' + escapeHtml(device.id) + '" aria-label="' + escapeHtml((hidden ? I18N.deviceUnhide : I18N.deviceHide) + ': ' + name) + '">' + escapeHtml(hidden ? I18N.deviceUnhide : I18N.deviceHide) + '</button>' +
+            '<button type="button" class="secondary small" data-device-action="merge" data-device-id="' + escapeHtml(device.id) + '" aria-label="' + escapeHtml(I18N.deviceMerge + ': ' + name) + '">' + escapeHtml(I18N.deviceMerge) + '</button>' +
+          '</div>'
+        : '';
       return (
         '<details class="device-card" data-device-id="' + escapeHtml(device.id) + '">' +
-          '<summary>' +
+          '<summary aria-label="' + escapeHtml(I18N.deviceDetails + ': ' + name) + '">' +
             '<div class="device-summary-main">' +
               '<span class="device-name" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</span>' +
-              '<span class="device-meta">' + escapeHtml(deviceRecordLabel(records)) + ' · ' + escapeHtml(formatRelativeTime(device.lastSeenAt)) + badge + '</span>' +
+              '<span class="device-meta">' + escapeHtml(deviceRecordLabel(records)) + ' · ' + escapeHtml(formatRelativeTime(device.lastSeenAt)) + onlyLabel + badge + '</span>' +
               shareHtml +
             '</div>' +
             '<span class="device-chevron" aria-hidden="true">›</span>' +
@@ -1314,13 +1328,9 @@ export function renderUserPage(locale: Locale): string {
             '<div class="kv"><span class="key">' + escapeHtml(I18N.deviceAverageProgressLabel) + '</span><span class="value">' + (device.averageProgress == null ? '-' : escapeHtml(formatPercent(device.averageProgress))) + '</span></div>' +
             '<div class="kv"><span class="key">' + escapeHtml(I18N.deviceFirstSeenLabel) + '</span><span class="value">' + escapeHtml(formatDate(device.firstSeenAt)) + '</span></div>' +
             '<div class="kv"><span class="key">' + escapeHtml(I18N.deviceLastSeenLabel) + '</span><span class="value">' + escapeHtml(formatDate(device.lastSeenAt)) + '</span></div>' +
-            '<div class="device-actions">' +
-              '<button type="button" class="secondary small" data-device-action="rename" data-device-id="' + escapeHtml(device.id) + '">' + escapeHtml(I18N.deviceRename) + '</button>' +
-              '<button type="button" class="secondary small" data-device-action="' + (hidden ? 'unhide' : 'hide') + '" data-device-id="' + escapeHtml(device.id) + '">' + escapeHtml(hidden ? I18N.deviceUnhide : I18N.deviceHide) + '</button>' +
-              '<button type="button" class="secondary small" data-device-action="merge" data-device-id="' + escapeHtml(device.id) + '">' + escapeHtml(I18N.deviceMerge) + '</button>' +
-            '</div>' +
+            actions +
             '<div class="device-recent" data-device-recent="' + escapeHtml(device.id) + '"><span class="text-secondary">' + escapeHtml(I18N.deviceRecentRecords) + '</span></div>' +
-            '<button type="button" class="link-btn" data-device-action="records" data-device-id="' + escapeHtml(device.id) + '">' + escapeHtml(I18N.deviceViewAllRecords) + '</button>' +
+            '<button type="button" class="link-btn" data-device-action="records" data-device-id="' + escapeHtml(device.id) + '" aria-label="' + escapeHtml(I18N.deviceViewAllRecords + ': ' + name) + '">' + escapeHtml(I18N.deviceViewAllRecords) + '</button>' +
           '</div>' +
         '</details>'
       );
@@ -1347,25 +1357,30 @@ export function renderUserPage(locale: Locale): string {
       if (!list || !hiddenList || !toggle) return;
 
       if (!deviceListCache.length) {
-        list.innerHTML = '<div class="text-secondary">' + escapeHtml(I18N.deviceNoRecords) + '</div>';
+        list.innerHTML = '<div class="text-secondary">' + escapeHtml(I18N.deviceNoDevices) + '</div>';
         hiddenList.innerHTML = '';
         hiddenList.classList.add('hidden');
         toggle.classList.add('hidden');
+        toggle.removeAttribute('aria-expanded');
         return;
       }
 
-      const showShare = visible.length > 1;
+      const onlyDevice = visible.length === 1 && hidden.length === 0;
+      const showShare = deviceListCache.length > 1;
       list.innerHTML = visible.length
-        ? visible.map((device) => deviceCardHtml(device, showShare ? deviceSharePercent(device, visible) : null)).join('')
-        : '<div class="text-secondary">' + escapeHtml(I18N.deviceNoRecords) + '</div>';
+        ? visible.map((device) => deviceCardHtml(device, showShare ? deviceSharePercent(device, deviceListCache) : null, onlyDevice)).join('')
+        : '<div class="text-secondary">' + escapeHtml(I18N.deviceAllHidden) + '</div>';
       attachDeviceCardEvents(list);
 
       if (hidden.length) {
-        const total = visible.concat(hidden);
-        hiddenList.innerHTML = hidden.map((device) => deviceCardHtml(device, total.length > 1 ? deviceSharePercent(device, total) : null)).join('');
+        hiddenList.innerHTML =
+          '<div class="text-secondary" style="grid-column:1/-1;">' + escapeHtml(I18N.deviceHiddenSection) + '</div>' +
+          hidden.map((device) => deviceCardHtml(device, showShare ? deviceSharePercent(device, deviceListCache) : null, false)).join('');
         attachDeviceCardEvents(hiddenList);
         toggle.classList.remove('hidden');
+        toggle.setAttribute('aria-controls', 'hiddenDeviceList');
         const collapsed = hiddenList.classList.contains('hidden');
+        toggle.setAttribute('aria-expanded', String(!collapsed));
         toggle.textContent = collapsed
           ? I18N.deviceShowHidden + ' (' + hidden.length + ')'
           : I18N.deviceHideHidden;
@@ -1373,13 +1388,18 @@ export function renderUserPage(locale: Locale): string {
         hiddenList.innerHTML = '';
         hiddenList.classList.add('hidden');
         toggle.classList.add('hidden');
+        toggle.removeAttribute('aria-expanded');
       }
     }
 
     async function loadDeviceRecent(details, device) {
       const container = details.querySelector('[data-device-recent]');
-      if (!container || container.dataset.loaded === '1') return;
-      container.dataset.loaded = '1';
+      if (!container || container.dataset.loaded === '1' || container.dataset.loading === '1') return;
+      if (!device.deviceId && !device.device) {
+        container.innerHTML = '<span class="text-secondary">' + escapeHtml(I18N.deviceNoRecords) + '</span>';
+        return;
+      }
+      container.dataset.loading = '1';
       const params = new URLSearchParams({ page: '1', pageSize: '3' });
       if (device.deviceId) params.set('device_id', device.deviceId);
       else params.set('device', device.device || '');
@@ -1396,8 +1416,11 @@ export function renderUserPage(locale: Locale): string {
                 '</div>'
               ).join('')
             : '<span class="text-secondary">' + escapeHtml(I18N.deviceNoRecords) + '</span>');
+        container.dataset.loaded = '1';
       } catch {
         container.innerHTML = '<span class="text-secondary">' + escapeHtml(I18N.requestFailed) + '</span>';
+      } finally {
+        container.dataset.loading = '';
       }
     }
 
@@ -1419,11 +1442,17 @@ export function renderUserPage(locale: Locale): string {
     }
 
     function showDeviceRecords(device) {
+      if (!device.deviceId && !device.device) {
+        showToast(I18N.deviceNoRecords, 'info');
+        return;
+      }
       recordDeviceFilter = {
         device: device.device || '',
         deviceId: device.deviceId || '',
         name: deviceDisplayName(device),
       };
+      document.getElementById('recordPage').value = '1';
+      document.getElementById('recordSearch').value = '';
       updateDeviceFilterChip();
       activateTab('sync', true);
     }
@@ -1449,24 +1478,63 @@ export function renderUserPage(locale: Locale): string {
           body: JSON.stringify(payload),
         });
         showToast(successMessage || I18N.deviceActionSaved, 'success');
+        tabLoaded.sync = false;
         await loadOverview();
+        if (currentTab === 'sync') await loadSyncTab();
       } catch (error) {
         showToast(error.message || I18N.requestFailed, 'error');
       }
     }
 
     async function mergeDevice(sourceId, targetId) {
+      const confirmBtn = document.getElementById('deviceDialogConfirmBtn');
+      if (confirmBtn) confirmBtn.disabled = true;
       try {
         await jsonFetch('/web/devices/' + encodeURIComponent(sourceId) + '/merge', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ targetId }),
         });
+        const source = findDevice(sourceId);
+        if (source && recordDeviceFilter) {
+          const sameDevice = source.deviceId
+            ? recordDeviceFilter.deviceId === source.deviceId
+            : recordDeviceFilter.device === source.device;
+          if (sameDevice) {
+            recordDeviceFilter = null;
+            updateDeviceFilterChip();
+          }
+        }
         showToast(I18N.deviceMerged, 'success');
         closeDeviceDialog();
+        tabLoaded.sync = false;
         await loadOverview();
+        if (currentTab === 'sync') await loadSyncTab();
       } catch (error) {
         showToast(error.message || I18N.requestFailed, 'error');
+      } finally {
+        if (confirmBtn) confirmBtn.disabled = false;
+      }
+    }
+
+    async function renameDevice(device, alias) {
+      const confirmBtn = document.getElementById('deviceDialogConfirmBtn');
+      if (confirmBtn) confirmBtn.disabled = true;
+      try {
+        await jsonFetch('/web/devices/' + encodeURIComponent(device.id), {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ alias: alias || null }),
+        });
+        closeDeviceDialog();
+        showToast(I18N.deviceActionSaved, 'success');
+        tabLoaded.sync = false;
+        await loadOverview();
+        if (currentTab === 'sync') await loadSyncTab();
+      } catch (error) {
+        showToast(error.message || I18N.requestFailed, 'error');
+      } finally {
+        if (confirmBtn) confirmBtn.disabled = false;
       }
     }
 
@@ -1475,7 +1543,9 @@ export function renderUserPage(locale: Locale): string {
       if (!dialog) return;
       deviceDialogState = { mode, device };
       document.getElementById('deviceDialogTitle').textContent =
-        mode === 'rename' ? I18N.deviceRenameTitle : I18N.deviceMergeTitle;
+        mode === 'rename'
+          ? I18N.deviceRenameTitle + ' · ' + deviceDisplayName(device)
+          : I18N.deviceMergeTitle + ' · ' + deviceDisplayName(device);
       document.getElementById('deviceDialogDescription').textContent =
         mode === 'rename' ? '' : I18N.deviceMergeDescription;
       document.getElementById('deviceDialogConfirmBtn').textContent =
@@ -1509,11 +1579,12 @@ export function renderUserPage(locale: Locale): string {
       }
 
       dialog.classList.add('active');
+      dialog.removeAttribute('inert');
       dialog.setAttribute('aria-hidden', 'false');
-      if (mode === 'rename') {
-        const input = document.getElementById('deviceAliasInput');
-        if (input) setTimeout(() => input.focus(), 0);
-      }
+      const focusTarget = mode === 'rename'
+        ? document.getElementById('deviceAliasInput')
+        : document.getElementById('deviceMergeSelect');
+      if (focusTarget) setTimeout(() => focusTarget.focus(), 0);
     }
 
     function closeDeviceDialog() {
@@ -1521,6 +1592,7 @@ export function renderUserPage(locale: Locale): string {
       if (!dialog) return;
       dialog.classList.remove('active');
       dialog.setAttribute('aria-hidden', 'true');
+      dialog.setAttribute('inert', '');
       deviceDialogState = null;
     }
 
@@ -1542,7 +1614,8 @@ export function renderUserPage(locale: Locale): string {
       const container = document.getElementById('toast-container');
       if (!container) return;
       const toast = document.createElement('div');
-      toast.className = 'toast ' + type;
+      const cls = type === 'success' ? 'ok' : type === 'error' ? 'err' : 'info';
+      toast.className = 'toast ' + cls;
       toast.textContent = msg;
       container.appendChild(toast);
       setTimeout(() => {
@@ -1663,7 +1736,11 @@ export function renderUserPage(locale: Locale): string {
     function renderRecords(items) {
       const tbody = document.getElementById('recordsBody');
       tbody.innerHTML = '';
-      for (const item of items || []) {
+      if (!items || !items.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-secondary" style="text-align:center;padding:18px;">' + escapeHtml(I18N.noData) + '</td></tr>';
+        return;
+      }
+      for (const item of items) {
         const progressText = formatPercent(item.percentage);
         const rawDoc = String(item.document || '');
         const rawDevId = String(item.device_id || '');
@@ -2265,12 +2342,10 @@ export function renderUserPage(locale: Locale): string {
         if (recordDeviceFilter.deviceId) params.set('device_id', recordDeviceFilter.deviceId);
         else if (recordDeviceFilter.device) params.set('device', recordDeviceFilter.device);
       }
+      const search = String(document.getElementById('recordSearch').value || '').trim();
+      if (search) params.set('search', search);
       const data = await jsonFetch('/web/records?' + params.toString());
-      const searchMd5 = String(document.getElementById('recordSearch').value || '').trim().toLowerCase();
-      const filtered = searchMd5
-        ? (data.items || []).filter((item) => String(item.document || '').toLowerCase().includes(searchMd5))
-        : (data.items || []);
-      renderRecords(filtered);
+      renderRecords(data.items || []);
     }
 
     async function activateTab(tabName, forceReload) {
@@ -2327,6 +2402,11 @@ export function renderUserPage(locale: Locale): string {
         tabLoaded.reading = false;
         tabLoaded.sync = false;
         tabLoaded.calendar = false;
+        recordDeviceFilter = null;
+        deviceListCache = [];
+        updateDeviceFilterChip();
+        document.getElementById('recordSearch').value = '';
+        document.getElementById('recordPage').value = '1';
         await ensureAuthenticated();
       }
     });
@@ -2388,6 +2468,7 @@ export function renderUserPage(locale: Locale): string {
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         closeBookDetailModal();
+        closeDeviceDialog();
       }
     });
 
@@ -2452,6 +2533,7 @@ export function renderUserPage(locale: Locale): string {
       const toggle = document.getElementById('toggleHiddenDevicesBtn');
       const hiddenCount = deviceListCache.filter((device) => device.hidden).length;
       const nowHidden = hiddenList.classList.toggle('hidden');
+      toggle.setAttribute('aria-expanded', String(!nowHidden));
       toggle.textContent = nowHidden
         ? I18N.deviceShowHidden + ' (' + hiddenCount + ')'
         : I18N.deviceHideHidden;
@@ -2459,6 +2541,7 @@ export function renderUserPage(locale: Locale): string {
 
     document.getElementById('clearRecordDeviceFilter').addEventListener('click', async () => {
       recordDeviceFilter = null;
+      document.getElementById('recordPage').value = '1';
       updateDeviceFilterChip();
       try { await loadSyncTab(); } catch {}
     });
@@ -2473,9 +2556,7 @@ export function renderUserPage(locale: Locale): string {
       const { mode, device } = deviceDialogState;
       if (mode === 'rename') {
         const input = document.getElementById('deviceAliasInput');
-        const alias = input ? input.value.trim() : '';
-        closeDeviceDialog();
-        applyDeviceSettings(device.id, { alias: alias || null }, I18N.deviceActionSaved);
+        renameDevice(device, input ? input.value.trim() : '');
       } else {
         const select = document.getElementById('deviceMergeSelect');
         const targetId = select ? Number(select.value) : 0;
@@ -2496,6 +2577,7 @@ export function renderUserPage(locale: Locale): string {
 
     document.getElementById('recordSearch').addEventListener('input', async () => {
       if (currentTab !== 'sync') return;
+      document.getElementById('recordPage').value = '1';
       try { await loadSyncTab(); } catch {}
     });
 

@@ -111,6 +111,8 @@ const en: LocaleMessages = {
     deviceViewAllRecords: "View all records",
     deviceFilterClear: "Clear device filter",
     deviceNoRecords: "No records for this device yet.",
+    deviceNoDevices: "No devices have synced yet.",
+    deviceAllHidden: "All devices are hidden.",
     deviceActionSaved: "Saved.",
     deviceMerged: "Devices merged.",
     deviceHidden: "Device hidden.",
