@@ -160,14 +160,15 @@ export async function upsertProgress(
 ): Promise<void> {
   await db.prepare(
     `INSERT INTO progress (
-      user_id, document, progress, percentage, device, device_id, timestamp, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
+      user_id, document, progress, percentage, device, device_id, timestamp, metadata, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
     ON CONFLICT(user_id, document) DO UPDATE SET
       progress = excluded.progress,
       percentage = excluded.percentage,
       device = excluded.device,
       device_id = excluded.device_id,
       timestamp = excluded.timestamp,
+      metadata = COALESCE(excluded.metadata, progress.metadata),
       updated_at = unixepoch()`
   )
     .bind(
@@ -177,7 +178,8 @@ export async function upsertProgress(
       payload.percentage,
       payload.device,
       payload.device_id,
-      payload.timestamp
+      payload.timestamp,
+      payload.metadata ?? null
     )
     .run();
 }
@@ -188,7 +190,7 @@ export async function getLatestProgressByDocument(
   document: string
 ): Promise<ProgressRow | null> {
   const row = await db.prepare(
-    `SELECT progress, percentage, device, device_id, timestamp
+    `SELECT progress, percentage, device, device_id, metadata, timestamp
      FROM progress
      WHERE user_id = ? AND document = ?
      ORDER BY timestamp DESC

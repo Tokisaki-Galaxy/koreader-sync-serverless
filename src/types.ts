@@ -27,6 +27,7 @@ export interface ProgressRow {
   device: string;
   device_id: string;
   timestamp: number;
+  metadata?: string | null;
   document?: string;
 }
 
@@ -46,6 +47,7 @@ export interface ProgressUpdateRequest {
   percentage: number;
   device: string;
   device_id?: string;
+  metadata?: unknown;
 }
 
 export interface StatisticsPageStatRow {

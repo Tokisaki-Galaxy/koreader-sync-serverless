@@ -9,6 +9,7 @@ type Progress = {
   device: string;
   device_id: string;
   timestamp: number;
+  metadata: string | null;
   updated_at: number;
 };
 type Session = { user_id: number; token_hash: string; expires_at: number };
@@ -164,6 +165,9 @@ class MockD1Database {
     if (q.startsWith("insert into progress") && q.includes("on conflict(user_id, document)")) {
       const user_id = Number(bound[0]);
       const document = String(bound[1] ?? "");
+      const incomingMetadata = bound[7] == null ? null : String(bound[7]);
+      const index = this.progress.findIndex((p) => p.user_id === user_id && p.document === document);
+      const existing = index >= 0 ? this.progress[index] : undefined;
       const payload: Progress = {
         user_id,
         document,
@@ -172,9 +176,9 @@ class MockD1Database {
         device: String(bound[4] ?? ""),
         device_id: String(bound[5] ?? ""),
         timestamp: Number(bound[6]),
+        metadata: incomingMetadata ?? existing?.metadata ?? null,
         updated_at: now,
       };
-      const index = this.progress.findIndex((p) => p.user_id === user_id && p.document === document);
       if (index >= 0) {
         this.progress[index] = payload;
       } else {
@@ -195,6 +199,7 @@ class MockD1Database {
         percentage: row.percentage,
         device: row.device,
         device_id: row.device_id,
+        metadata: row.metadata,
         timestamp: row.timestamp,
       };
     }

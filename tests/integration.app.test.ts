@@ -87,6 +87,125 @@ describe("worker integration", () => {
     await expect(res.json()).resolves.toEqual({ document: "missing-book" });
   });
 
+  it("stores optional progress metadata and keeps it when older clients omit it", async () => {
+    const env = createMockEnv();
+
+    await app.request(
+      "/users/create",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "metareader", password: "password" }),
+      },
+      env
+    );
+
+    const authHeaders = {
+      "x-auth-user": "metareader",
+      "x-auth-key": "5f4dcc3b5aa765d61d8327deb882cf99",
+      "content-type": "application/json",
+    };
+
+    const putWithMetadata = await app.request(
+      "/syncs/progress",
+      {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({
+          document: "meta-book",
+          progress: "page:12",
+          percentage: 12.5,
+          device: "kobo",
+          device_id: "device-a",
+          metadata: {
+            filename: "meta-book.epub",
+            title: "Meta Book",
+            authors: "Test Author",
+            ignored: "not persisted",
+          },
+        }),
+      },
+      env
+    );
+    expect(putWithMetadata.status).toBe(200);
+
+    const firstGet = await app.request(
+      "/syncs/progress/meta-book",
+      { method: "GET", headers: authHeaders },
+      env
+    );
+    expect(firstGet.status).toBe(200);
+    await expect(firstGet.json()).resolves.toMatchObject({
+      document: "meta-book",
+      metadata: {
+        filename: "meta-book.epub",
+        title: "Meta Book",
+        authors: "Test Author",
+      },
+    });
+
+    // An older plugin does not send metadata at all. The stored value must survive.
+    const putWithoutMetadata = await app.request(
+      "/syncs/progress",
+      {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({
+          document: "meta-book",
+          progress: "page:20",
+          percentage: 20,
+          device: "kobo",
+          device_id: "device-a",
+        }),
+      },
+      env
+    );
+    expect(putWithoutMetadata.status).toBe(200);
+
+    const secondGet = await app.request(
+      "/syncs/progress/meta-book",
+      { method: "GET", headers: authHeaders },
+      env
+    );
+    await expect(secondGet.json()).resolves.toMatchObject({
+      progress: "page:20",
+      metadata: {
+        filename: "meta-book.epub",
+        title: "Meta Book",
+        authors: "Test Author",
+      },
+    });
+
+    // Malformed metadata must not clear the previous value.
+    const putInvalidMetadata = await app.request(
+      "/syncs/progress",
+      {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({
+          document: "meta-book",
+          progress: "page:30",
+          percentage: 30,
+          device: "kobo",
+          device_id: "device-a",
+          metadata: "not-an-object",
+        }),
+      },
+      env
+    );
+    expect(putInvalidMetadata.status).toBe(200);
+
+    const thirdGet = await app.request(
+      "/syncs/progress/meta-book",
+      { method: "GET", headers: authHeaders },
+      env
+    );
+    await expect(thirdGet.json()).resolves.toMatchObject({
+      progress: "page:30",
+      metadata: { title: "Meta Book" },
+    });
+  });
+
   it("supports web login -> me -> logout", async () => {
     const env = createMockEnv();
     const md5Password = "5f4dcc3b5aa765d61d8327deb882cf99";
