@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import app from "../src/index";
 import { hashPassword, sha256 } from "../src/crypto";
 import { parsePbkdf2Iterations } from "../src/services/common";
-import { getStatisticsSnapshot, listAllProgressByUser, upsertStatisticsSnapshot } from "../src/db";
+import { getDatabaseInitStatus, getStatisticsSnapshot, listAllProgressByUser, upsertStatisticsSnapshot } from "../src/db";
+import { D1DatabaseAdapter } from "../src/database/d1Adapter";
 import { STATISTICS_SUMMARY_VERSION } from "../src/services/statistics";
 import { createMockEnv, readSessionExpiry, seedSession } from "./helpers/mock-db";
 import { getCookieHeaderFromResponse } from "./helpers/http";
@@ -15,6 +16,14 @@ describe("worker integration", () => {
     await expect(res.json()).resolves.toEqual({ state: "OK" });
     expect(res.headers.get("x-frame-options")).toBe("DENY");
     expect(res.headers.get("content-security-policy")).toContain("'wasm-unsafe-eval'");
+  });
+
+  it("reports a default mock database as initialized", async () => {
+    const env = createMockEnv();
+    const adapter = new D1DatabaseAdapter(env.DB!);
+    const status = await getDatabaseInitStatus(adapter);
+    expect(status.initialized).toBe(true);
+    expect(status.missingTables).toEqual([]);
   });
 
   it("handles KOReader register + sync + fetch flow", async () => {
@@ -204,6 +213,57 @@ describe("worker integration", () => {
       progress: "page:30",
       metadata: { title: "Meta Book" },
     });
+
+    const longTitle = "a".repeat(600);
+    await app.request(
+      "/syncs/progress",
+      {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({
+          document: "meta-book",
+          progress: "page:40",
+          percentage: 40,
+          device: "kobo",
+          device_id: "device-a",
+          metadata: { title: longTitle },
+        }),
+      },
+      env
+    );
+    const longGet = await app.request(
+      "/syncs/progress/meta-book",
+      { method: "GET", headers: authHeaders },
+      env
+    );
+    const longPayload = await longGet.json();
+    expect(longPayload.metadata.title.length).toBe(512);
+
+    const wideTitle = "书".repeat(300);
+    await app.request(
+      "/syncs/progress",
+      {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({
+          document: "meta-book",
+          progress: "page:50",
+          percentage: 50,
+          device: "kobo",
+          device_id: "device-a",
+          metadata: { title: wideTitle },
+        }),
+      },
+      env
+    );
+    const wideGet = await app.request(
+      "/syncs/progress/meta-book",
+      { method: "GET", headers: authHeaders },
+      env
+    );
+    const widePayload = await wideGet.json();
+    expect(new TextEncoder().encode(widePayload.metadata.title).length).toBeLessThanOrEqual(512);
+    expect(widePayload.metadata.title).toBe("书".repeat(170));
   });
 
   it("supports web login -> me -> logout", async () => {

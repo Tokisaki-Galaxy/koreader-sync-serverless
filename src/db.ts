@@ -1,92 +1,18 @@
 import type { DatabaseAdapter } from "./database/adapter";
 import type { ProgressRow, UserRow } from "./types";
-import initMigrationSql from "../migrations/0001_init.sql";
-import statisticsMigrationSql from "../migrations/0002_statistics_sync.sql";
+import { runMigrations } from "./migrations";
+import { MIGRATIONS } from "./migrations-bundle";
 
 const REQUIRED_TABLES = ["users", "progress", "sessions", "statistics_snapshot"] as const;
 
-function splitSqlStatements(sql: string): string[] {
-  const statements: string[] = [];
-  let current = "";
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-  let inLineComment = false;
-  let inBlockComment = false;
-
-  for (let i = 0; i < sql.length; i++) {
-    const char = sql[i];
-    const next = sql[i + 1];
-
-    if (inLineComment) {
-      if (char === "\n") inLineComment = false;
-      current += char;
-      continue;
-    }
-
-    if (inBlockComment) {
-      current += char;
-      if (char === "*" && next === "/") {
-        current += next;
-        i++;
-        inBlockComment = false;
-      }
-      continue;
-    }
-
-    if (!inSingleQuote && !inDoubleQuote && char === "-" && next === "-") {
-      current += char + next;
-      i++;
-      inLineComment = true;
-      continue;
-    }
-
-    if (!inSingleQuote && !inDoubleQuote && char === "/" && next === "*") {
-      current += char + next;
-      i++;
-      inBlockComment = true;
-      continue;
-    }
-
-    if (char === "'" && !inDoubleQuote) {
-      if (inSingleQuote && next === "'") {
-        current += char + next;
-        i++;
-        continue;
-      }
-      inSingleQuote = !inSingleQuote;
-      current += char;
-      continue;
-    }
-
-    if (char === '"' && !inSingleQuote) {
-      if (inDoubleQuote && next === '"') {
-        current += char + next;
-        i++;
-        continue;
-      }
-      inDoubleQuote = !inDoubleQuote;
-      current += char;
-      continue;
-    }
-
-    if (char === ";" && !inSingleQuote && !inDoubleQuote) {
-      const statement = current.trim();
-      if (statement) statements.push(statement);
-      current = "";
-      continue;
-    }
-
-    current += char;
-  }
-
-  const tail = current.trim();
-  if (tail) statements.push(tail);
-  return statements;
-}
+const REQUIRED_COLUMNS: Array<{ table: string; columns: string[] }> = [
+  { table: "progress", columns: ["metadata"] },
+  { table: "statistics_snapshot", columns: ["statistics_summary_json"] },
+];
 
 export async function getDatabaseInitStatus(
   db: DatabaseAdapter
-): Promise<{ initialized: boolean; missingTables: Array<(typeof REQUIRED_TABLES)[number]> }> {
+): Promise<{ initialized: boolean; missingTables: string[] }> {
   const checks = await Promise.all(
     REQUIRED_TABLES.map(async (tableName) => {
       const row = await db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
@@ -95,19 +21,70 @@ export async function getDatabaseInitStatus(
       return row?.name ? null : tableName;
     })
   );
-  const missingTables = checks.filter((name) => name !== null);
-  return { initialized: missingTables.length === 0, missingTables };
+  const missing: string[] = checks.filter((name) => name !== null);
+
+  const migrationTable = await db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .bind("schema_migrations")
+    .first<{ name: string }>();
+  const appliedVersions = new Set<string>();
+  if (migrationTable) {
+    const rows = await db
+      .prepare("SELECT version FROM schema_migrations")
+      .all<{ version: string }>();
+    for (const row of rows.results ?? []) {
+      appliedVersions.add(row.version);
+    }
+  }
+
+  // `wrangler d1 migrations apply` records versions in d1_migrations instead
+  // of schema_migrations. Treat both as proof that a migration was applied.
+  const d1MigrationTable = await db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .bind("d1_migrations")
+    .first<{ name: string }>();
+  if (d1MigrationTable) {
+    try {
+      const rows = await db.prepare("SELECT name FROM d1_migrations").all<{ name: string }>();
+      for (const row of rows.results ?? []) {
+        appliedVersions.add(row.name.replace(/\.sql$/, ""));
+      }
+    } catch {
+      // Keep the schema_migrations result if the D1 table shape is unexpected.
+    }
+  }
+
+  for (const migration of MIGRATIONS) {
+    if (!appliedVersions.has(migration.version)) {
+      missing.push(`migration:${migration.version}`);
+    }
+  }
+
+  for (const requirement of REQUIRED_COLUMNS) {
+    if (missing.includes(requirement.table)) continue;
+    try {
+      const info = await db
+        .prepare(`PRAGMA table_info(${requirement.table})`)
+        .all<{ name: string }>();
+      const present = new Set((info.results ?? []).map((row) => row.name));
+      for (const column of requirement.columns) {
+        if (!present.has(column)) missing.push(`${requirement.table}.${column}`);
+      }
+    } catch {
+      // Fail closed: if the column cannot be verified, report it so the admin
+      // UI offers to run migrations instead of hiding the action. The suffix
+      // distinguishes "not verified" from a confirmed missing column.
+      for (const column of requirement.columns) {
+        missing.push(`${requirement.table}.${column}:unverified`);
+      }
+    }
+  }
+
+  return { initialized: missing.length === 0, missingTables: missing };
 }
 
 export async function initializeDatabase(db: DatabaseAdapter): Promise<void> {
-  const statements = [
-    ...splitSqlStatements(initMigrationSql),
-    ...splitSqlStatements(statisticsMigrationSql),
-  ];
-
-  for (const statement of statements) {
-    await db.prepare(statement).run();
-  }
+  await runMigrations(db, MIGRATIONS);
 }
 
 export async function findUserByUsername(
