@@ -162,8 +162,11 @@ ON CONFLICT(user_id, device_key) DO UPDATE SET
   PRIMARY KEY (user_id, kind, chunk_index),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
-
-ALTER TABLE statistics_snapshot ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
+`,
+  },
+  {
+    version: "0008_statistics_revision",
+    sql: `ALTER TABLE statistics_snapshot ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
 `,
   },
 ];

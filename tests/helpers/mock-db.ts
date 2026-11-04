@@ -167,6 +167,10 @@ class MockD1Database {
     return session ? session.expires_at : null;
   }
 
+  getChunkCount(userId: number, kind: string): number {
+    return this.snapshotChunks.get(userId)?.get(kind)?.length ?? 0;
+  }
+
   private normalizeSql(sql: string): string {
     return sql.replace(/\s+/g, " ").trim().toLowerCase();
   }

@@ -15,7 +15,7 @@ const REQUIRED_TABLES = [
 
 const REQUIRED_COLUMNS: Array<{ table: string; columns: string[] }> = [
   { table: "progress", columns: ["metadata"] },
-  { table: "statistics_snapshot", columns: ["statistics_summary_json"] },
+  { table: "statistics_snapshot", columns: ["statistics_summary_json", "revision"] },
 ];
 
 export async function getDatabaseInitStatus(
@@ -307,16 +307,8 @@ export async function getStatisticsSnapshot(
   const row = await getStatisticsSnapshotMeta(db, userId);
   if (!row) return null;
   if (row.snapshot_json) return row;
-  const chunks = await readStatisticsChunks(db, userId, "snapshot");
-  if (chunks.length > 0) {
-    return { ...row, snapshot_json: joinSnapshotChunks(chunks) };
-  }
-  // A concurrent sync may have replaced chunked storage with an inline snapshot.
-  const fresh = await getStatisticsSnapshotMeta(db, userId);
-  if (fresh && fresh.revision !== row.revision && fresh.snapshot_json) {
-    return fresh;
-  }
-  return row;
+  const snapshotJson = await loadStatisticsSnapshotJson(db, userId, row);
+  return { ...row, snapshot_json: snapshotJson };
 }
 
 export async function upsertStatisticsSnapshot(

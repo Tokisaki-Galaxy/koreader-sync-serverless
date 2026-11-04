@@ -42,6 +42,10 @@ class SqliteStatementAdapter {
   }
 
   async run(): Promise<{ meta: { changes?: number } }> {
+    return this.runSync();
+  }
+
+  runSync(): { meta: { changes?: number } } {
     const result = this.statement.run(...this.params);
     return { meta: { changes: result.changes } };
   }
@@ -66,10 +70,16 @@ class SqliteDatabaseAdapter implements DatabaseAdapter {
 
   async batch(statements: SqlStatement[]): Promise<void> {
     if (statements.length === 0) return;
+    // Run the whole batch synchronously so no other request can observe a
+    // half-applied transaction on this shared connection.
     this.db.exec("BEGIN IMMEDIATE");
     try {
       for (const statement of statements) {
-        await statement.run();
+        if (statement instanceof SqliteStatementAdapter) {
+          statement.runSync();
+        } else {
+          await statement.run();
+        }
       }
       this.db.exec("COMMIT");
     } catch (error) {
@@ -90,5 +100,6 @@ class SqliteDatabaseAdapter implements DatabaseAdapter {
 export function createSqliteDatabaseAdapter(sqlitePath: string): DatabaseAdapter {
   const db = new DatabaseSync(sqlitePath);
   db.exec("PRAGMA foreign_keys = ON");
+  db.exec("PRAGMA busy_timeout = 5000");
   return new SqliteDatabaseAdapter(db);
 }

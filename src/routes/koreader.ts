@@ -183,9 +183,12 @@ router.get("/syncs/progress/:document", async (c) => {
 });
 
 router.put("/syncs/statistics", async (c) => {
-  const declaredLength = Number(c.req.header("content-length") ?? "");
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_SNAPSHOT_BYTES) {
-    return c.json({ message: "Statistics snapshot too large" }, 413);
+  const declaredLength = c.req.header("content-length");
+  if (declaredLength !== undefined) {
+    const parsedLength = Number(declaredLength);
+    if (Number.isFinite(parsedLength) && parsedLength > MAX_SNAPSHOT_BYTES) {
+      return c.json({ message: "Statistics snapshot too large" }, 413);
+    }
   }
   const ua = c.req.header("user-agent");
   const version = c.req.header("x-client-version");
@@ -229,7 +232,13 @@ router.put("/syncs/statistics", async (c) => {
 
   try {
     const existing = await getStatisticsSnapshot(c.get("db"), auth.userId);
+    if (existing && !existing.snapshot_json) {
+      return c.json({ message: "Statistics temporarily unavailable" }, 503);
+    }
     const existingSnapshot = existing ? parseSnapshotFromJson(existing.snapshot_json) : null;
+    if (existing && !existingSnapshot) {
+      return c.json({ message: "Statistics snapshot is corrupted" }, 500);
+    }
     const mergedSnapshot = mergeSnapshots(existingSnapshot, incomingSnapshot);
     const mergedJson = JSON.stringify(mergedSnapshot);
     if (snapshotByteLength(mergedJson) > MAX_SNAPSHOT_BYTES) {

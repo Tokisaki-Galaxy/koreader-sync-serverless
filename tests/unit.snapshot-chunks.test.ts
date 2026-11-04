@@ -40,6 +40,14 @@ describe("snapshot chunks", () => {
     expect(joinSnapshotChunks(chunks)).toBe(value);
   });
 
+  it("preserves a BOM-like character at a chunk boundary", () => {
+    const value = "abc\uFEFFdef";
+    const chunks = splitSnapshotJson(value, 4);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.some((chunk) => chunk.startsWith("\uFEFF"))).toBe(true);
+    expect(joinSnapshotChunks(chunks)).toBe(value);
+  });
+
   it("handles an empty payload", () => {
     expect(splitSnapshotJson("")).toEqual([""]);
   });

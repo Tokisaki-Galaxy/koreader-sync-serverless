@@ -8,10 +8,10 @@ export const SNAPSHOT_CHUNK_BYTES = 512 * 1024;
 // Upper bound for a merged statistics snapshot. This keeps the read path well
 // below D1's 50 MB query result limit and Worker memory limits while leaving
 // plenty of headroom over the 5 MB payloads seen in practice.
-export const MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024;
+export const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 
 const utf8Encoder = new TextEncoder();
-const utf8Decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false });
+const utf8Decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 export function snapshotByteLength(value: string): number {
   return utf8Encoder.encode(value).length;

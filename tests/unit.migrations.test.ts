@@ -64,6 +64,7 @@ describe("migrations", () => {
         "0005_user_devices",
         "0006_user_devices_backfill",
         "0007_statistics_snapshot_chunks",
+        "0008_statistics_revision",
       ]);
     } finally {
       db.close?.();
@@ -92,6 +93,7 @@ describe("migrations", () => {
         "0005_user_devices",
         "0006_user_devices_backfill",
         "0007_statistics_snapshot_chunks",
+        "0008_statistics_revision",
       ]);
     } finally {
       db.close?.();

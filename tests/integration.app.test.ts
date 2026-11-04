@@ -1358,6 +1358,42 @@ describe("worker integration", () => {
       expect(res.status).toBe(400);
     });
 
+    it("rejects invalid statistics before writing progress", async () => {
+      const env = createMockEnv();
+      const cookie = await loginAndSeed(env);
+      const res = await app.request(
+        "/web/import",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({
+            progress: [
+              {
+                document: "should-not-land",
+                progress: "page:1",
+                percentage: 0.1,
+                device: "Imported",
+                device_id: "",
+                timestamp: 1700000000,
+              },
+            ],
+            statistics: {
+              schema_version: 20221111,
+              device: "imported",
+              device_id: "",
+              snapshot: { books: [] },
+            },
+          }),
+        },
+        env
+      );
+      expect(res.status).toBe(400);
+
+      const me = await (await app.request("/web/me", { headers: { cookie } }, env)).json();
+      const rows = await listAllProgressByUser(env.DB, me.id);
+      expect(rows.some((row) => row.document === "should-not-land")).toBe(false);
+    });
+
     it("reports only newly added books when merging statistics", async () => {
       const env = createMockEnv();
       const cookie = await loginAndSeed(env);

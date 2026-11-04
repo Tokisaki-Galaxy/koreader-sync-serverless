@@ -59,11 +59,12 @@ Current migrations:
 - `0004_progress_metadata.sql` optional progress metadata
 - `0005_user_devices.sql` device table and backfill
 - `0006_user_devices_backfill.sql` timestamp backfill
-- `0007_statistics_snapshot_chunks.sql` chunked statistics snapshot storage and a revision column for cached summary rebuilds
+- `0007_statistics_snapshot_chunks.sql` chunked statistics snapshot storage
+- `0008_statistics_revision.sql` revision column for safe cached summary rebuilds
 
 Large statistics snapshots and cached summaries are split across `statistics_snapshot_chunk` rows once they exceed 512 KB. This keeps every D1 row well below the 2 MB row limit. Data written by older versions stays in the inline columns and is still readable; the next statistics sync moves that user to chunked storage automatically.
 
-A single merged statistics snapshot is capped at 16 MB. Larger payloads are rejected with HTTP 413 before any database write. This stays well clear of D1's 50 MB query result limit and the Worker memory limit.
+A single merged statistics snapshot is capped at 8 MB. Larger payloads are rejected with HTTP 413 before the statistics write. This stays well clear of D1's 50 MB query result limit and the Worker memory limit.
 
 The `/admin` Initialize Database button runs all bundled migrations, so it is also safe for existing deployments that skipped the CLI. Run `pnpm run check:migrations` to verify the generated SQL bundle is up to date.
 
