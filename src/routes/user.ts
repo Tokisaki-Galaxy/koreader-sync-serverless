@@ -22,6 +22,7 @@ import { generateSessionToken, sha256, verifyPassword } from "../crypto";
 import { pickLocale } from "../i18n";
 import { authWebUser, USER_SESSION_COOKIE } from "../services/auth";
 import { badRequest, parsePbkdf2Iterations, parseSessionTtlHours } from "../services/common";
+import { parseProgressMetadata } from "../services/metadata";
 import {
   buildStatisticsSummary,
   computeBookTrajectory,
@@ -261,7 +262,11 @@ router.get("/web/records", async (c) => {
     offset,
   });
 
-  return c.json({ page, pageSize, items: results ?? [] });
+  const items = (results ?? []).map((row) => ({
+    ...row,
+    metadata: parseProgressMetadata(row.metadata),
+  }));
+  return c.json({ page, pageSize, items });
 });
 
 router.get("/web/stats", async (c) => {
@@ -537,7 +542,9 @@ router.get("/web/stats/calendar/detail", async (c) => {
 
 router.get("/", (c) => {
   const locale = pickLocale(c.req.header("accept-language"));
-  return c.html(renderUserPage(locale));
+  const nonce = crypto.randomUUID().replaceAll("-", "");
+  c.set("cspNonce", nonce);
+  return c.html(renderUserPage(locale, nonce));
 });
 
 export default router;

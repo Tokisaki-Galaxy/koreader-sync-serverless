@@ -60,13 +60,18 @@ export function isValidPassword(password: string): boolean {
   return password.length >= 8;
 }
 
-export function withSecurityHeaders(headers: Headers): Headers {
+export function withSecurityHeaders(headers: Headers, nonce?: string): Headers {
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-frame-options", "DENY");
   headers.set("referrer-policy", "no-referrer");
+  const scriptSrc = nonce
+    ? `'self' 'nonce-${nonce}' 'wasm-unsafe-eval'`
+    : `'self' 'wasm-unsafe-eval'`;
+  const styleSrc = `'self' 'unsafe-inline'`;
+  const styleElemSrc = nonce ? `'self' 'nonce-${nonce}'` : `'self'`;
   headers.set(
     "content-security-policy",
-    "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; object-src 'none'; frame-ancestors 'none';"
+    `default-src 'self'; style-src ${styleSrc}; style-src-elem ${styleElemSrc}; style-src-attr 'unsafe-inline'; script-src ${scriptSrc}; script-src-attr 'none'; object-src 'none'; frame-ancestors 'none';`
   );
   return headers;
 }

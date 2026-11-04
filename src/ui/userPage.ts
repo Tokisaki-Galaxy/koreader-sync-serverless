@@ -1,19 +1,21 @@
 import { getMessages, type Locale } from "../i18n";
+import { clientHelpersSource } from "./clientHelpersSource";
 
 function toScriptJson(value: unknown): string {
   return JSON.stringify(value).replaceAll("<", "\\u003c");
 }
 
-export function renderUserPage(locale: Locale): string {
+export function renderUserPage(locale: Locale, nonce?: string): string {
   const m = getMessages(locale).user;
   const i18nJson = toScriptJson(m);
+  const nonceAttr = nonce ? ` nonce="${nonce}"` : "";
   return `<!doctype html>
 <html lang="${locale}">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${m.title}</title>
-  <style>
+  <style${nonceAttr}>
     :root {
       --bg: #f8fafc;
       --surface: #ffffff;
@@ -413,6 +415,8 @@ export function renderUserPage(locale: Locale): string {
     .link-btn { background: none; border: none; color: var(--primary); padding: 0; font-size: 12px; cursor: pointer; text-align: left; }
     .link-btn:hover { background: none; color: var(--primary); text-decoration: underline; }
     .link-btn:active { transform: none; }
+    .record-title { font-weight: 500; }
+    .record-subtitle { font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .device-dialog-field { display: grid; gap: 6px; margin-top: 10px; }
     .device-dialog-field input, .device-dialog-field select { width: 100%; min-width: 0; }
     #recordDeviceFilter { flex-wrap: wrap; }
@@ -1171,7 +1175,7 @@ export function renderUserPage(locale: Locale): string {
   </div>
 
   <div id="calTooltip" class="cal-tooltip"></div>
-  <script>
+  <script${nonceAttr}>
     const I18N = ${i18nJson};
     const MS_PER_SECOND = 1000;
     const DATE_FORMATS = {
@@ -1195,13 +1199,14 @@ export function renderUserPage(locale: Locale): string {
     let currentTab = 'overview';
     const tabLoaded = { overview: false, reading: false, sync: false, calendar: false };
 
-    function escapeHtml(value) {
-      return String(value ?? '')
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
+    ${clientHelpersSource}
+
+    function localDeviceName(device) {
+      return deviceDisplayName(device, I18N.deviceUnknown);
+    }
+
+    function localDeviceRecords(count) {
+      return deviceRecordLabel(count, I18N.deviceRecordSingular, I18N.deviceRecordPlural);
     }
 
     function formatPercent(value) {
@@ -1257,32 +1262,9 @@ export function renderUserPage(locale: Locale): string {
       }
     }
 
-    function deviceDisplayName(device) {
-      return String(device.alias || device.device || I18N.deviceUnknown).trim() || I18N.deviceUnknown;
-    }
-
-    function deviceRecordLabel(count) {
-      const n = Number(count || 0);
-      return n + ' ' + (n === 1 ? I18N.deviceRecordSingular : I18N.deviceRecordPlural);
-    }
-
-    function deviceSharePercent(device, devices) {
-      const recordCount = (item) => Number(item.records != null ? item.records : item.count || 0);
-      const total = devices.reduce((sum, item) => sum + recordCount(item), 0);
-      if (total <= 0) return 0;
-      return Math.round((recordCount(device) / total) * 100);
-    }
-
-    function truncateId(value, head, tail) {
-      const text = String(value || '');
-      if (!text) return '-';
-      if (text.length <= head + tail + 1) return text;
-      return text.slice(0, head) + '…' + text.slice(-tail);
-    }
-
-    function deviceCardHtml(device, share, onlyDevice) {
+    function deviceCardHtml(device, share, onlyDevice, showIdSuffix) {
       const hidden = !!device.hidden;
-      const name = deviceDisplayName(device);
+      const displayName = deviceDisplayNameWithSuffix(device, showIdSuffix, I18N.deviceUnknown);
       const records = Number(device.records != null ? device.records : device.count || 0);
       const canManage = Number(device.id) > 0;
       const shareHtml = share === null ? '' :
@@ -1295,17 +1277,17 @@ export function renderUserPage(locale: Locale): string {
         : '';
       const actions = canManage
         ? '<div class="device-actions">' +
-            '<button type="button" class="secondary small" data-device-action="rename" data-device-id="' + escapeHtml(device.id) + '" aria-label="' + escapeHtml(I18N.deviceRename + ': ' + name) + '">' + escapeHtml(I18N.deviceRename) + '</button>' +
-            '<button type="button" class="secondary small" data-device-action="' + (hidden ? 'unhide' : 'hide') + '" data-device-id="' + escapeHtml(device.id) + '" aria-label="' + escapeHtml((hidden ? I18N.deviceUnhide : I18N.deviceHide) + ': ' + name) + '">' + escapeHtml(hidden ? I18N.deviceUnhide : I18N.deviceHide) + '</button>' +
-            '<button type="button" class="secondary small" data-device-action="merge" data-device-id="' + escapeHtml(device.id) + '" aria-label="' + escapeHtml(I18N.deviceMerge + ': ' + name) + '">' + escapeHtml(I18N.deviceMerge) + '</button>' +
+            '<button type="button" class="secondary small" data-device-action="rename" data-device-id="' + escapeHtml(device.id) + '" aria-label="' + escapeHtml(I18N.deviceRename + ': ' + displayName) + '">' + escapeHtml(I18N.deviceRename) + '</button>' +
+            '<button type="button" class="secondary small" data-device-action="' + (hidden ? 'unhide' : 'hide') + '" data-device-id="' + escapeHtml(device.id) + '" aria-label="' + escapeHtml((hidden ? I18N.deviceUnhide : I18N.deviceHide) + ': ' + displayName) + '">' + escapeHtml(hidden ? I18N.deviceUnhide : I18N.deviceHide) + '</button>' +
+            '<button type="button" class="secondary small" data-device-action="merge" data-device-id="' + escapeHtml(device.id) + '" aria-label="' + escapeHtml(I18N.deviceMerge + ': ' + displayName) + '">' + escapeHtml(I18N.deviceMerge) + '</button>' +
           '</div>'
         : '';
       return (
         '<details class="device-card" data-device-id="' + escapeHtml(device.id) + '">' +
-          '<summary aria-label="' + escapeHtml(I18N.deviceDetails + ': ' + name + ' · ' + deviceRecordLabel(records) + ' · ' + formatRelativeTime(device.lastSeenAt)) + '">' +
+          '<summary aria-label="' + escapeHtml(I18N.deviceDetails + ': ' + displayName + ' · ' + localDeviceRecords(records) + ' · ' + formatRelativeTime(device.lastSeenAt)) + '">' +
             '<div class="device-summary-main">' +
-              '<span class="device-name" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</span>' +
-              '<span class="device-meta">' + escapeHtml(deviceRecordLabel(records)) + ' · ' + escapeHtml(formatRelativeTime(device.lastSeenAt)) + onlyLabel + badge + '</span>' +
+              '<span class="device-name" title="' + escapeHtml(displayName) + '">' + escapeHtml(displayName) + '</span>' +
+              '<span class="device-meta">' + escapeHtml(localDeviceRecords(records)) + ' · ' + escapeHtml(formatRelativeTime(device.lastSeenAt)) + onlyLabel + badge + '</span>' +
               shareHtml +
             '</div>' +
             '<span class="device-chevron" aria-hidden="true">›</span>' +
@@ -1318,7 +1300,7 @@ export function renderUserPage(locale: Locale): string {
             '<div class="kv"><span class="key">' + escapeHtml(I18N.deviceLastSeenLabel) + '</span><span class="value">' + escapeHtml(formatDate(device.lastSeenAt)) + '</span></div>' +
             actions +
             '<div class="device-recent" data-device-recent="' + escapeHtml(device.id) + '"><span class="text-secondary">' + escapeHtml(I18N.deviceRecentRecords) + '</span></div>' +
-            '<button type="button" class="link-btn" data-device-action="records" data-device-id="' + escapeHtml(device.id) + '" aria-label="' + escapeHtml(I18N.deviceViewAllRecords + ': ' + name) + '">' + escapeHtml(I18N.deviceViewAllRecords) + '</button>' +
+            '<button type="button" class="link-btn" data-device-action="records" data-device-id="' + escapeHtml(device.id) + '" aria-label="' + escapeHtml(I18N.deviceViewAllRecords + ': ' + displayName) + '">' + escapeHtml(I18N.deviceViewAllRecords) + '</button>' +
           '</div>' +
         '</details>'
       );
@@ -1356,15 +1338,18 @@ export function renderUserPage(locale: Locale): string {
 
       const onlyDevice = visible.length === 1 && hidden.length === 0;
       const showShare = deviceListCache.length > 1;
+      const names = deviceListCache.map((device) => localDeviceName(device));
+      const duplicateNames = new Set(names.filter((name, index) => names.indexOf(name) !== index));
+      const showIdSuffix = (device) => duplicateNames.has(localDeviceName(device)) && !!device.deviceId;
       list.innerHTML = visible.length
-        ? visible.map((device) => deviceCardHtml(device, showShare ? deviceSharePercent(device, deviceListCache) : null, onlyDevice)).join('')
+        ? visible.map((device) => deviceCardHtml(device, showShare ? deviceSharePercent(device, deviceListCache) : null, onlyDevice, showIdSuffix(device))).join('')
         : '<div class="text-secondary" style="grid-column:1/-1;">' + escapeHtml(I18N.deviceAllHidden) + '</div>';
       attachDeviceCardEvents(list);
 
       if (hidden.length) {
         hiddenList.innerHTML =
           '<div class="text-secondary" style="grid-column:1/-1;">' + escapeHtml(I18N.deviceHiddenSection) + '</div>' +
-          hidden.map((device) => deviceCardHtml(device, showShare ? deviceSharePercent(device, deviceListCache) : null, false)).join('');
+          hidden.map((device) => deviceCardHtml(device, showShare ? deviceSharePercent(device, deviceListCache) : null, false, showIdSuffix(device))).join('');
         attachDeviceCardEvents(hiddenList);
         toggle.classList.remove('hidden');
         toggle.setAttribute('aria-controls', 'hiddenDeviceList');
@@ -1398,13 +1383,18 @@ export function renderUserPage(locale: Locale): string {
         const items = Array.isArray(data.items) ? data.items : [];
         container.innerHTML = '<span class="text-secondary">' + escapeHtml(I18N.deviceRecentRecords) + '</span>' +
           (items.length
-            ? items.map((item) =>
-                '<div class="device-recent-row">' +
-                  '<span class="device-recent-doc" title="' + escapeHtml(item.document || '') + '">' + escapeHtml(truncateMiddle(String(item.document || ''), 10, 8)) + '</span>' +
+            ? items.map((item) => {
+                const meta = item.metadata && typeof item.metadata === 'object' ? item.metadata : null;
+                const title = meta && meta.title ? String(meta.title) : truncateMiddle(String(item.document || ''), 10, 8);
+                const titleAttr = meta && meta.title
+                  ? String(meta.title) + (meta.authors ? ' · ' + meta.authors : '')
+                  : String(item.document || '');
+                return '<div class="device-recent-row">' +
+                  '<span class="device-recent-doc" title="' + escapeHtml(titleAttr) + '">' + escapeHtml(title) + '</span>' +
                   '<span class="device-recent-pct">' + escapeHtml(formatPercent(item.percentage)) + '</span>' +
                   '<span class="device-recent-time">' + escapeHtml(formatDate(item.timestamp)) + '</span>' +
-                '</div>'
-              ).join('')
+                '</div>';
+              }).join('')
             : '<span class="text-secondary">' + escapeHtml(I18N.deviceNoRecords) + '</span>');
         container.dataset.loaded = '1';
       } catch {
@@ -1439,7 +1429,7 @@ export function renderUserPage(locale: Locale): string {
       recordDeviceFilter = {
         device: device.device || '',
         deviceId: device.deviceId || '',
-        name: deviceDisplayName(device),
+        name: localDeviceName(device),
       };
       document.getElementById('recordPage').value = '1';
       document.getElementById('recordSearch').value = '';
@@ -1545,8 +1535,8 @@ export function renderUserPage(locale: Locale): string {
       deviceDialogState = { mode, device };
       document.getElementById('deviceDialogTitle').textContent =
         mode === 'rename'
-          ? I18N.deviceRenameTitle + ' · ' + deviceDisplayName(device)
-          : I18N.deviceMergeTitle + ' · ' + deviceDisplayName(device);
+          ? I18N.deviceRenameTitle + ' · ' + localDeviceName(device)
+          : I18N.deviceMergeTitle + ' · ' + localDeviceName(device);
       document.getElementById('deviceDialogDescription').textContent =
         mode === 'rename' ? '' : I18N.deviceMergeDescription;
       document.getElementById('deviceDialogConfirmBtn').textContent =
@@ -1569,7 +1559,7 @@ export function renderUserPage(locale: Locale): string {
           field.innerHTML =
             '<label class="text-secondary" for="deviceMergeSelect">' + escapeHtml(I18N.deviceMergeTarget) + '</label>' +
             '<select id="deviceMergeSelect">' + eligible.map((item) =>
-              '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(deviceDisplayName(item)) +
+              '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(localDeviceName(item)) +
               (item.deviceId ? ' · ' + escapeHtml(truncateId(item.deviceId, 6, 4)) : '') +
               '</option>'
             ).join('') + '</select>';
@@ -1745,15 +1735,26 @@ export function renderUserPage(locale: Locale): string {
         const progressText = formatPercent(item.percentage);
         const rawDoc = String(item.document || '');
         const rawDevId = String(item.device_id || '');
+        const meta = item.metadata && typeof item.metadata === 'object' ? item.metadata : null;
+        const metaTitle = meta && meta.title ? String(meta.title) : '';
+        const metaAuthors = meta && meta.authors ? String(meta.authors) : '';
         const deviceInfo = deviceListCache.find((device) =>
           rawDevId
             ? String(device.deviceId || '') === rawDevId
             : String(device.device || '') === String(item.device || '') && !device.deviceId
         );
-        const deviceLabel = deviceInfo ? deviceDisplayName(deviceInfo) : (item.device || I18N.noData);
+        const deviceLabel = deviceInfo ? localDeviceName(deviceInfo) : (item.device || I18N.noData);
+        const hashSpan =
+          '<span class="copy-click num" data-copy="' + escapeHtml(rawDoc) + '" title="' + escapeHtml(rawDoc) + ' (Click to copy)">' +
+            escapeHtml(truncateMiddle(rawDoc, 8, 6)) + ' 📋' +
+          '</span>';
+        const docCell = metaTitle
+          ? '<div class="record-title truncate" title="' + escapeHtml(metaTitle + (metaAuthors ? ' · ' + metaAuthors : '')) + '">' + escapeHtml(metaTitle) + '</div>' +
+            '<div class="record-subtitle">' + (metaAuthors ? escapeHtml(metaAuthors) + ' · ' : '') + hashSpan + '</div>'
+          : '<span class="truncate num copy-click" data-copy="' + escapeHtml(rawDoc) + '" title="' + escapeHtml(rawDoc) + ' (Click to copy)">' + escapeHtml(truncateMiddle(rawDoc, 10, 8)) + ' 📋</span>';
         const tr = document.createElement('tr');
         tr.innerHTML =
-          '<td><span class="truncate num copy-click" data-copy="' + escapeHtml(rawDoc) + '" title="' + escapeHtml(rawDoc) + ' (Click to copy)">' + escapeHtml(truncateMiddle(rawDoc, 10, 8)) + ' 📋</span></td>' +
+          '<td>' + docCell + '</td>' +
           '<td><span class="chip-progress">' + escapeHtml(progressText) + '</span></td>' +
           '<td><span class="pill device">' + escapeHtml(deviceLabel) + '</span></td>' +
           '<td><span class="truncate num copy-click" data-copy="' + escapeHtml(rawDevId) + '" title="' + escapeHtml(rawDevId) + '">' + escapeHtml(truncateMiddle(rawDevId, 8, 6)) + '</span></td>' +
