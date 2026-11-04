@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import type { DatabaseAdapter } from "../database/adapter";
+import type { DatabaseAdapter, SqlStatement } from "../database/adapter";
 
 const require = createRequire(import.meta.url);
 type NodeSqlite = {
@@ -18,18 +18,17 @@ const sqliteModule = require("node:sqlite") as NodeSqlite;
 const DatabaseSync = sqliteModule.DatabaseSync;
 
 class SqliteStatementAdapter {
-  private params: unknown[] = [];
   constructor(
     private readonly statement: {
       get(...params: unknown[]): unknown;
       all(...params: unknown[]): unknown[];
       run(...params: unknown[]): { changes?: number };
-    }
+    },
+    private readonly params: unknown[] = []
   ) {}
 
   bind(...values: unknown[]) {
-    this.params = values;
-    return this;
+    return new SqliteStatementAdapter(this.statement, values);
   }
 
   async first<T>(): Promise<T | null> {
@@ -51,6 +50,7 @@ class SqliteStatementAdapter {
 class SqliteDatabaseAdapter implements DatabaseAdapter {
   constructor(
     private readonly db: {
+      exec(sql: string): void;
       prepare(sql: string): {
         get(...params: unknown[]): unknown;
         all(...params: unknown[]): unknown[];
@@ -62,6 +62,20 @@ class SqliteDatabaseAdapter implements DatabaseAdapter {
 
   prepare(sql: string) {
     return new SqliteStatementAdapter(this.db.prepare(sql));
+  }
+
+  async batch(statements: SqlStatement[]): Promise<void> {
+    if (statements.length === 0) return;
+    this.db.exec("BEGIN");
+    try {
+      for (const statement of statements) {
+        await statement.run();
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   close() {

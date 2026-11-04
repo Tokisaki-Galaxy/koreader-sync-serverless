@@ -17,5 +17,8 @@ export interface SqlStatement {
 
 export interface DatabaseAdapter {
   prepare(sql: string): SqlStatement;
+  // Runs the statements in a single transaction. On D1 this maps to one batch,
+  // which also counts as a single query against the per-invocation limit.
+  batch(statements: SqlStatement[]): Promise<void>;
   close?(): void;
 }

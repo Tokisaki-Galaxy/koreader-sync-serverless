@@ -7,9 +7,12 @@ class D1StatementAdapter implements SqlStatement {
     this.statement = statement;
   }
 
+  get prepared(): D1PreparedStatement {
+    return this.statement;
+  }
+
   bind(...values: unknown[]): SqlStatement {
-    this.statement = this.statement.bind(...values);
-    return this;
+    return new D1StatementAdapter(this.statement.bind(...values));
   }
 
   async first<T>(): Promise<T | null> {
@@ -32,5 +35,16 @@ export class D1DatabaseAdapter implements DatabaseAdapter {
 
   prepare(sql: string): SqlStatement {
     return new D1StatementAdapter(this.db.prepare(sql));
+  }
+
+  async batch(statements: SqlStatement[]): Promise<void> {
+    const prepared = statements.map((statement) => {
+      if (!(statement instanceof D1StatementAdapter)) {
+        throw new Error("D1 batch received a statement from another adapter");
+      }
+      return statement.prepared;
+    });
+    if (prepared.length === 0) return;
+    await this.db.batch(prepared);
   }
 }

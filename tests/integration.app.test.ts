@@ -598,6 +598,94 @@ describe("worker integration", () => {
     expect(bookDetailData.book.reading_speed.seconds_per_page).toBe(2.2);
   });
 
+  it("accepts a multi-megabyte statistics snapshot and reads it back", async () => {
+    const env = createMockEnv();
+    const md5Password = "5f4dcc3b5aa765d61d8327deb882cf99";
+    const hash = await hashPassword(
+      md5Password,
+      "bigstats",
+      env.PASSWORD_PEPPER,
+      parsePbkdf2Iterations(env)
+    );
+    await env.DB.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)")
+      .bind("bigstats", hash)
+      .run();
+
+    const now = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
+    const pageStatData = Array.from({ length: 42000 }, (_, index) => ({
+      page: (index % 500) + 1,
+      start_time: now + index * 60,
+      duration: 45,
+      total_pages: 500,
+    }));
+    const snapshot = {
+      books: [
+        {
+          md5: "d".repeat(32),
+          title: "A very large library entry " + "书".repeat(200000),
+          authors: "Big Author",
+          notes: 0,
+          last_open: now + pageStatData.length * 60,
+          highlights: 0,
+          pages: 500,
+          series: "",
+          language: "en",
+          total_read_time: pageStatData.length * 45,
+          total_read_pages: pageStatData.length,
+          page_stat_data: pageStatData,
+        },
+      ],
+    };
+    const body = JSON.stringify({
+      schema_version: 20221111,
+      device: "Kindle",
+      device_id: "big-1",
+      snapshot,
+    });
+    expect(new TextEncoder().encode(body).length).toBeGreaterThan(2 * 1024 * 1024);
+
+    const statsHeaders = {
+      "x-auth-user": "bigstats",
+      "x-auth-key": md5Password,
+      "content-type": "application/json",
+      "x-client-version": "y-anna-1.0",
+      "User-Agent": "Mozilla/DONTLIKE/ANYTHING",
+    };
+    const putRes = await app.request(
+      "/syncs/statistics",
+      { method: "PUT", headers: statsHeaders, body },
+      env
+    );
+    expect(putRes.status).toBe(200);
+    const putData = await putRes.json();
+    expect(putData.snapshot.books).toHaveLength(1);
+    expect(putData.snapshot.books[0].page_stat_data).toHaveLength(42000);
+
+    const webLogin = await app.request(
+      "/web/auth/login",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "bigstats", password: "password" }),
+      },
+      env
+    );
+    const cookie = getCookieHeaderFromResponse(webLogin, "ks_session");
+
+    const exportRes = await app.request("/web/export/data", { headers: { cookie } }, env);
+    expect(exportRes.status).toBe(200);
+    const exportData = await exportRes.json();
+    expect(exportData.statistics.snapshot.books).toHaveLength(1);
+    expect(exportData.statistics.snapshot.books[0].page_stat_data).toHaveLength(42000);
+    expect(exportData.statistics.snapshot.books[0].title).toBe(snapshot.books[0].title);
+
+    const statsRes = await app.request("/web/stats", { headers: { cookie } }, env);
+    expect(statsRes.status).toBe(200);
+    await expect(statsRes.json()).resolves.toMatchObject({
+      readingStatistics: { totalBooks: 1 },
+    });
+  });
+
   it("accepts admin cookie computed from token and pepper", async () => {
     const env = createMockEnv();
     const adminSessionHash = await sha256(`${env.ADMIN_TOKEN}:${env.PASSWORD_PEPPER}`);

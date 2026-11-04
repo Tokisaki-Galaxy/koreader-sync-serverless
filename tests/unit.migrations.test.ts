@@ -45,6 +45,13 @@ describe("migrations", () => {
         expect.arrayContaining(["user_id", "device_key", "device", "device_id", "alias", "hidden"])
       );
 
+      const chunkColumns = await db
+        .prepare("PRAGMA table_info(statistics_snapshot_chunk)")
+        .all<{ name: string }>();
+      expect(columnNames(chunkColumns)).toEqual(
+        expect.arrayContaining(["user_id", "kind", "chunk_index", "data"])
+      );
+
       const applied = await db
         .prepare("SELECT version FROM schema_migrations ORDER BY version")
         .all<{ version: string }>();
@@ -55,6 +62,7 @@ describe("migrations", () => {
         "0004_progress_metadata",
         "0005_user_devices",
         "0006_user_devices_backfill",
+        "0007_statistics_snapshot_chunks",
       ]);
     } finally {
       db.close?.();
@@ -82,6 +90,7 @@ describe("migrations", () => {
         "0004_progress_metadata",
         "0005_user_devices",
         "0006_user_devices_backfill",
+        "0007_statistics_snapshot_chunks",
       ]);
     } finally {
       db.close?.();
