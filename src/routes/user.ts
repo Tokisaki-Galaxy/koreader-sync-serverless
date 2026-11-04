@@ -200,7 +200,8 @@ router.post("/web/import", async (c) => {
     }
 
     const schemaVersion = Number(raw.schema_version) || 20221111;
-    const device = typeof raw.device === "string" && raw.device ? raw.device : "imported";
+    const explicitDevice = typeof raw.device === "string" ? raw.device.trim() : "";
+    const device = explicitDevice || "Imported";
     const deviceId = typeof raw.device_id === "string" ? raw.device_id : "";
 
     const existing = await getStatisticsSnapshot(c.get("db"), auth.userId);
@@ -217,10 +218,12 @@ router.post("/web/import", async (c) => {
       JSON.stringify(mergedSnapshot),
       JSON.stringify(summary)
     );
-    try {
-      await touchUserDevice(c.get("db"), auth.userId, device, deviceId, Math.floor(Date.now() / 1000));
-    } catch {
-      // Device bookkeeping must never break the import.
+    if (explicitDevice) {
+      try {
+        await touchUserDevice(c.get("db"), auth.userId, device, deviceId, Math.floor(Date.now() / 1000));
+      } catch {
+        // Device bookkeeping must never break the import.
+      }
     }
     // Report books actually added by this import (new md5s), not the total
     // merged count, so an empty import can't masquerade as a success.
@@ -394,7 +397,8 @@ router.post("/web/devices/:id/merge", async (c) => {
 router.get("/web/statistics/books", async (c) => {
   const auth = await authWebUser(c);
   if (!auth) return c.json({ error: "Unauthorized" }, 401);
-  const page = Math.max(1, Number(c.req.query("page") || "1"));
+  const rawPage = Number(c.req.query("page") || "1");
+  const page = Number.isFinite(rawPage) ? Math.max(1, Math.trunc(rawPage)) : 1;
   const pageSize = c.req.query("pageSize") === "100" ? 100 : 50;
   const offset = (page - 1) * pageSize;
   const query = (c.req.query("search") || c.req.query("q") || "").trim().toLowerCase();

@@ -625,9 +625,12 @@ export async function mergeUserDevices(
 
   if (source.device_id) {
     await db.prepare(
-      `UPDATE statistics_snapshot SET device = ?, device_id = ? WHERE user_id = ? AND device_id = ?`
+      `UPDATE statistics_snapshot SET device = ?, device_id = ?
+       WHERE user_id = ? AND (
+         device_id = ? OR (device = ? AND (device_id IS NULL OR device_id = ''))
+       )`
     )
-      .bind(target.device, target.device_id, userId, source.device_id)
+      .bind(target.device, target.device_id, userId, source.device_id, source.device)
       .run();
   } else {
     await db.prepare(
@@ -638,13 +641,15 @@ export async function mergeUserDevices(
       .run();
   }
 
+  const nextAlias = target.alias ?? source.alias;
   await db.prepare(
     `UPDATE user_devices SET
        first_seen_at = MIN(first_seen_at, ?),
-       last_seen_at = MAX(last_seen_at, ?)
+       last_seen_at = MAX(last_seen_at, ?),
+       alias = ?
      WHERE id = ? AND user_id = ?`
   )
-    .bind(source.first_seen_at, source.last_seen_at, targetId, userId)
+    .bind(source.first_seen_at, source.last_seen_at, nextAlias, targetId, userId)
     .run();
 
   await db.prepare(`DELETE FROM user_devices WHERE id = ? AND user_id = ?`)

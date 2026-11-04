@@ -428,6 +428,65 @@ describe("real-sqlite in-process smoke", () => {
     ).toEqual(["merge-name-doc", "merge-target-doc"].sort());
   });
 
+  it("rejects merging an id-bearing device into a name-only target", async () => {
+    await app.request(
+      "/users/create",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "invalidmerge", password: "password" }),
+      },
+      env
+    );
+    const authHeaders = {
+      "x-auth-user": "invalidmerge",
+      "x-auth-key": "5f4dcc3b5aa765d61d8327deb882cf99",
+      "content-type": "application/json",
+    };
+    const put = (body: Record<string, unknown>) =>
+      app.request("/syncs/progress", { method: "PUT", headers: authHeaders, body: JSON.stringify(body) }, env);
+    await put({ document: "invalid-source-doc", progress: "page:1", percentage: 0.1, device: "Kobo", device_id: "kobo-id2" });
+    await put({ document: "invalid-target-doc", progress: "page:2", percentage: 0.2, device: "PocketBook", device_id: "" });
+
+    const login = await app.request(
+      "/web/auth/login",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "invalidmerge", password: "password" }),
+      },
+      env
+    );
+    const cookie = getCookieHeaderFromResponse(login, "ks_session");
+    const stats = await (await app.request("/web/stats", { headers: { cookie } }, env)).json();
+    const source = stats.devices.find((d: { deviceId: string }) => d.deviceId === "kobo-id2");
+    const target = stats.devices.find(
+      (d: { device: string; deviceId: string }) => d.device === "PocketBook" && d.deviceId === ""
+    );
+    expect(source).toBeTruthy();
+    expect(target).toBeTruthy();
+
+    const merge = await app.request(
+      `/web/devices/${source.id}/merge`,
+      {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ targetId: target.id }),
+      },
+      env
+    );
+    expect(merge.status).toBe(400);
+
+    const sourceRecords = await (
+      await app.request("/web/records?device_id=kobo-id2&pageSize=10", { headers: { cookie } }, env)
+    ).json();
+    expect(sourceRecords.items.map((item: { document: string }) => item.document)).toEqual(["invalid-source-doc"]);
+    const targetRecords = await (
+      await app.request("/web/records?device=PocketBook&pageSize=10", { headers: { cookie } }, env)
+    ).json();
+    expect(targetRecords.items.map((item: { document: string }) => item.document)).toEqual(["invalid-target-doc"]);
+  });
+
   it("blocks cross-user and invalid device operations", async () => {
     for (const username of ["devowner", "devother"]) {
       await app.request(
