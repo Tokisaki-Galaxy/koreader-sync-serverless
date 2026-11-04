@@ -1,10 +1,10 @@
-import { mkdirSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { serve } from "@hono/node-server";
 import { createApp } from "../app";
-import { createDatabaseAdapter } from "../database/index";
-import { runMigrations, type Migration } from "../migrations";
+import { createSqliteDatabaseAdapter } from "./sqlite";
+import { runMigrations } from "../migrations";
+import { MIGRATIONS } from "../migrations-bundle";
 import type { Env } from "../types";
 import { setFallbackDatabaseAdapter } from "../context";
 
@@ -33,22 +33,8 @@ function parseNodeEnv(): Env {
 
 async function ensureDatabaseInitialized(sqlitePath: string) {
   mkdirSync(dirname(sqlitePath), { recursive: true });
-  const db = createDatabaseAdapter({
-    PASSWORD_PEPPER: "bootstrap",
-    ADMIN_TOKEN: "bootstrap",
-    RUNTIME_TARGET: "node",
-    DB_DRIVER: "sqlite",
-    SQLITE_PATH: sqlitePath,
-  });
-  const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "../../migrations");
-  const migrations: Migration[] = readdirSync(migrationsDir)
-    .filter((file) => file.endsWith(".sql"))
-    .sort()
-    .map((file) => ({
-      version: file.replace(/\.sql$/, ""),
-      sql: readFileSync(join(migrationsDir, file), "utf8"),
-    }));
-  await runMigrations(db, migrations);
+  const db = createSqliteDatabaseAdapter(sqlitePath);
+  await runMigrations(db, MIGRATIONS);
   return db;
 }
 

@@ -1,23 +1,18 @@
 import type { DatabaseAdapter } from "./database/adapter";
 import type { ProgressRow, UserRow } from "./types";
-import { runMigrations, type Migration } from "./migrations";
-import initMigrationSql from "../migrations/0001_init.sql";
-import statisticsMigrationSql from "../migrations/0002_statistics_sync.sql";
-import statisticsSummaryMigrationSql from "../migrations/0003_statistics_summary.sql";
-import progressMetadataMigrationSql from "../migrations/0004_progress_metadata.sql";
+import { runMigrations } from "./migrations";
+import { MIGRATIONS } from "./migrations-bundle";
 
 const REQUIRED_TABLES = ["users", "progress", "sessions", "statistics_snapshot"] as const;
 
-const MIGRATIONS: Migration[] = [
-  { version: "0001_init", sql: initMigrationSql },
-  { version: "0002_statistics_sync", sql: statisticsMigrationSql },
-  { version: "0003_statistics_summary", sql: statisticsSummaryMigrationSql },
-  { version: "0004_progress_metadata", sql: progressMetadataMigrationSql },
+const REQUIRED_COLUMNS: Array<{ table: string; columns: string[] }> = [
+  { table: "progress", columns: ["metadata"] },
+  { table: "statistics_snapshot", columns: ["statistics_summary_json"] },
 ];
 
 export async function getDatabaseInitStatus(
   db: DatabaseAdapter
-): Promise<{ initialized: boolean; missingTables: Array<(typeof REQUIRED_TABLES)[number]> }> {
+): Promise<{ initialized: boolean; missingTables: string[] }> {
   const checks = await Promise.all(
     REQUIRED_TABLES.map(async (tableName) => {
       const row = await db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
@@ -26,8 +21,24 @@ export async function getDatabaseInitStatus(
       return row?.name ? null : tableName;
     })
   );
-  const missingTables = checks.filter((name) => name !== null);
-  return { initialized: missingTables.length === 0, missingTables };
+  const missing: string[] = checks.filter((name) => name !== null);
+
+  for (const requirement of REQUIRED_COLUMNS) {
+    if (missing.includes(requirement.table)) continue;
+    try {
+      const info = await db
+        .prepare(`PRAGMA table_info(${requirement.table})`)
+        .all<{ name: string }>();
+      const present = new Set((info.results ?? []).map((row) => row.name));
+      for (const column of requirement.columns) {
+        if (!present.has(column)) missing.push(`${requirement.table}.${column}`);
+      }
+    } catch {
+      // Some adapters do not expose PRAGMA; the table checks still apply.
+    }
+  }
+
+  return { initialized: missing.length === 0, missingTables: missing };
 }
 
 export async function initializeDatabase(db: DatabaseAdapter): Promise<void> {

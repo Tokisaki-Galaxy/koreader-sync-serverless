@@ -5,6 +5,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSqliteDatabaseAdapter } from "../src/node/sqlite";
 import { runMigrations, type Migration } from "../src/migrations";
+import { MIGRATIONS } from "../src/migrations-bundle";
+import { getDatabaseInitStatus } from "../src/db";
 
 function loadMigrations(): Migration[] {
   const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "../migrations");
@@ -72,6 +74,26 @@ describe("migrations", () => {
         "0003_statistics_summary",
         "0004_progress_metadata",
       ]);
+    } finally {
+      db.close?.();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the generated bundle in sync with the SQL files", () => {
+    expect(MIGRATIONS).toEqual(loadMigrations());
+  });
+
+  it("reports missing columns on a partially migrated database", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "koreader-sync-partial-"));
+    const db = createSqliteDatabaseAdapter(join(dir, "test.db"));
+    try {
+      await runMigrations(db, loadMigrations().slice(0, 2));
+
+      const status = await getDatabaseInitStatus(db);
+      expect(status.initialized).toBe(false);
+      expect(status.missingTables).toContain("progress.metadata");
+      expect(status.missingTables).toContain("statistics_snapshot.statistics_summary_json");
     } finally {
       db.close?.();
       rmSync(dir, { recursive: true, force: true });
