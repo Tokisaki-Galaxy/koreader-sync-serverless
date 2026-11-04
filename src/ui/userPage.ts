@@ -205,7 +205,6 @@ export function renderUserPage(locale: Locale): string {
     .toast.ok { background: #059669; }
     .toast.err { background: #dc2626; }
     .toast.info { background: #4f46e5; }
-    .toast.fade-out { opacity: 0; transform: translateY(-8px); }
     /* Login wrapper centering */
     .login-wrapper {
       min-height: calc(100vh - 120px);
@@ -376,18 +375,6 @@ export function renderUserPage(locale: Locale): string {
     .source-bar.accent { background: linear-gradient(90deg, var(--accent), #6ee7b7); }
     .source-bar.primary { background: linear-gradient(90deg, var(--primary), #93c5fd); }
     .device-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin-top: 12px; }
-    .device-item {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 10px 12px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      transition: box-shadow var(--transition);
-    }
-    .device-item:hover { box-shadow: var(--shadow-sm); }
     .device-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
     .device-section-head h4 { margin: 0; }
     .device-card {
@@ -428,7 +415,7 @@ export function renderUserPage(locale: Locale): string {
     .device-dialog-field { display: grid; gap: 6px; margin-top: 10px; }
     .device-dialog-field input, .device-dialog-field select { width: 100%; min-width: 0; }
     #recordDeviceFilter { flex-wrap: wrap; }
-    #recordDeviceFilterLabel { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    #recordDeviceFilterLabel { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     table {
       width: 100%;
       min-width: 900px;
@@ -1314,7 +1301,7 @@ export function renderUserPage(locale: Locale): string {
         : '';
       return (
         '<details class="device-card" data-device-id="' + escapeHtml(device.id) + '">' +
-          '<summary aria-label="' + escapeHtml(I18N.deviceDetails + ': ' + name) + '">' +
+          '<summary aria-label="' + escapeHtml(I18N.deviceDetails + ': ' + name + ' · ' + deviceRecordLabel(records) + ' · ' + formatRelativeTime(device.lastSeenAt)) + '">' +
             '<div class="device-summary-main">' +
               '<span class="device-name" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</span>' +
               '<span class="device-meta">' + escapeHtml(deviceRecordLabel(records)) + ' · ' + escapeHtml(formatRelativeTime(device.lastSeenAt)) + onlyLabel + badge + '</span>' +
@@ -1357,11 +1344,12 @@ export function renderUserPage(locale: Locale): string {
       if (!list || !hiddenList || !toggle) return;
 
       if (!deviceListCache.length) {
-        list.innerHTML = '<div class="text-secondary">' + escapeHtml(I18N.deviceNoDevices) + '</div>';
+        list.innerHTML = '<div class="text-secondary" style="grid-column:1/-1;">' + escapeHtml(I18N.deviceNoDevices) + '</div>';
         hiddenList.innerHTML = '';
         hiddenList.classList.add('hidden');
         toggle.classList.add('hidden');
         toggle.removeAttribute('aria-expanded');
+        toggle.removeAttribute('aria-controls');
         return;
       }
 
@@ -1369,7 +1357,7 @@ export function renderUserPage(locale: Locale): string {
       const showShare = deviceListCache.length > 1;
       list.innerHTML = visible.length
         ? visible.map((device) => deviceCardHtml(device, showShare ? deviceSharePercent(device, deviceListCache) : null, onlyDevice)).join('')
-        : '<div class="text-secondary">' + escapeHtml(I18N.deviceAllHidden) + '</div>';
+        : '<div class="text-secondary" style="grid-column:1/-1;">' + escapeHtml(I18N.deviceAllHidden) + '</div>';
       attachDeviceCardEvents(list);
 
       if (hidden.length) {
@@ -1389,6 +1377,7 @@ export function renderUserPage(locale: Locale): string {
         hiddenList.classList.add('hidden');
         toggle.classList.add('hidden');
         toggle.removeAttribute('aria-expanded');
+        toggle.removeAttribute('aria-controls');
       }
     }
 
@@ -1464,9 +1453,11 @@ export function renderUserPage(locale: Locale): string {
       if (recordDeviceFilter) {
         chip.classList.remove('hidden');
         label.textContent = I18N.tableDevice + ': ' + recordDeviceFilter.name;
+        label.title = recordDeviceFilter.name;
       } else {
         chip.classList.add('hidden');
         label.textContent = '';
+        label.title = '';
       }
     }
 
@@ -1528,6 +1519,15 @@ export function renderUserPage(locale: Locale): string {
         });
         closeDeviceDialog();
         showToast(I18N.deviceActionSaved, 'success');
+        if (recordDeviceFilter) {
+          const sameDevice = device.deviceId
+            ? recordDeviceFilter.deviceId === device.deviceId
+            : recordDeviceFilter.device === device.device;
+          if (sameDevice) {
+            recordDeviceFilter.name = alias || device.device || I18N.deviceUnknown;
+            updateDeviceFilterChip();
+          }
+        }
         tabLoaded.sync = false;
         await loadOverview();
         if (currentTab === 'sync') await loadSyncTab();
@@ -2575,10 +2575,14 @@ export function renderUserPage(locale: Locale): string {
       } catch {}
     });
 
-    document.getElementById('recordSearch').addEventListener('input', async () => {
-      if (currentTab !== 'sync') return;
-      document.getElementById('recordPage').value = '1';
-      try { await loadSyncTab(); } catch {}
+    let recordSearchTimer = null;
+    document.getElementById('recordSearch').addEventListener('input', () => {
+      clearTimeout(recordSearchTimer);
+      recordSearchTimer = setTimeout(async () => {
+        if (currentTab !== 'sync') return;
+        document.getElementById('recordPage').value = '1';
+        try { await loadSyncTab(); } catch {}
+      }, 250);
     });
 
     // ------------------------------------------------------------------
