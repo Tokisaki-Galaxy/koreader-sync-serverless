@@ -204,6 +204,57 @@ describe("worker integration", () => {
       progress: "page:30",
       metadata: { title: "Meta Book" },
     });
+
+    const longTitle = "a".repeat(600);
+    await app.request(
+      "/syncs/progress",
+      {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({
+          document: "meta-book",
+          progress: "page:40",
+          percentage: 40,
+          device: "kobo",
+          device_id: "device-a",
+          metadata: { title: longTitle },
+        }),
+      },
+      env
+    );
+    const longGet = await app.request(
+      "/syncs/progress/meta-book",
+      { method: "GET", headers: authHeaders },
+      env
+    );
+    const longPayload = await longGet.json();
+    expect(longPayload.metadata.title.length).toBe(512);
+
+    const wideTitle = "书".repeat(300);
+    await app.request(
+      "/syncs/progress",
+      {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({
+          document: "meta-book",
+          progress: "page:50",
+          percentage: 50,
+          device: "kobo",
+          device_id: "device-a",
+          metadata: { title: wideTitle },
+        }),
+      },
+      env
+    );
+    const wideGet = await app.request(
+      "/syncs/progress/meta-book",
+      { method: "GET", headers: authHeaders },
+      env
+    );
+    const widePayload = await wideGet.json();
+    expect(new TextEncoder().encode(widePayload.metadata.title).length).toBeLessThanOrEqual(512);
+    expect(widePayload.metadata.title).toBe("书".repeat(170));
   });
 
   it("supports web login -> me -> logout", async () => {

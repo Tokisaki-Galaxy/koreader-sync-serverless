@@ -1,9 +1,11 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createSqliteDatabaseAdapter } from "../src/node/sqlite";
 import { setFallbackDatabaseAdapter } from "../src/context";
+import { runMigrations, type Migration } from "../src/migrations";
 import app from "../src/index";
 import type { Env } from "../src/types";
 import { getCookieHeaderFromResponse } from "./helpers/http";
@@ -25,54 +27,20 @@ const env: Env = {
   ENABLE_USER_REGISTRATION: "1",
 };
 
-beforeAll(() => {
+beforeAll(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), "koreader-sync-smoke-"));
   sqlitePath = join(tmpDir, "koreader-sync.db");
   env.SQLITE_PATH = sqlitePath;
   const db = createSqliteDatabaseAdapter(sqlitePath);
-  db.prepare(
-    `CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      created_at INTEGER NOT NULL DEFAULT (unixepoch())
-    )`
-  ).run();
-  db.prepare(
-    `CREATE TABLE IF NOT EXISTS progress (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      document TEXT NOT NULL,
-      progress TEXT NOT NULL,
-      percentage REAL NOT NULL,
-      device TEXT NOT NULL,
-      device_id TEXT NOT NULL,
-      timestamp INTEGER NOT NULL,
-      metadata TEXT,
-      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-      UNIQUE (user_id, document)
-    )`
-  ).run();
-  db.prepare(
-    `CREATE TABLE IF NOT EXISTS sessions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      token_hash TEXT NOT NULL UNIQUE,
-      expires_at INTEGER NOT NULL,
-      created_at INTEGER NOT NULL DEFAULT (unixepoch())
-    )`
-  ).run();
-  db.prepare(
-    `CREATE TABLE IF NOT EXISTS statistics_snapshot (
-      user_id INTEGER PRIMARY KEY,
-      schema_version INTEGER NOT NULL,
-      device TEXT NOT NULL,
-      device_id TEXT NOT NULL,
-      snapshot_json TEXT NOT NULL,
-      statistics_summary_json TEXT,
-      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
-    )`
-  ).run();
+  const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "../migrations");
+  const migrations: Migration[] = readdirSync(migrationsDir)
+    .filter((file) => file.endsWith(".sql"))
+    .sort()
+    .map((file) => ({
+      version: file.replace(/\.sql$/, ""),
+      sql: readFileSync(join(migrationsDir, file), "utf8"),
+    }));
+  await runMigrations(db, migrations);
   setFallbackDatabaseAdapter(db);
   closeDb = () => db.close?.();
 });
@@ -113,11 +81,23 @@ describe("real-sqlite in-process smoke", () => {
           percentage: 42.5,
           device: "kobo",
           device_id: "dev-1",
+          metadata: { title: "Smoke Book", authors: "Tester" },
         }),
       },
       env
     );
     expect(putRes.status).toBe(200);
+
+    const getProgressRes = await app.request(
+      "/syncs/progress/smoke-book",
+      { method: "GET", headers: authHeaders },
+      env
+    );
+    expect(getProgressRes.status).toBe(200);
+    await expect(getProgressRes.json()).resolves.toMatchObject({
+      document: "smoke-book",
+      metadata: { title: "Smoke Book", authors: "Tester" },
+    });
 
     // Sync statistics via KOReader API
     const statsRes = await app.request(

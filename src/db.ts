@@ -1,88 +1,19 @@
 import type { DatabaseAdapter } from "./database/adapter";
 import type { ProgressRow, UserRow } from "./types";
+import { runMigrations, type Migration } from "./migrations";
 import initMigrationSql from "../migrations/0001_init.sql";
 import statisticsMigrationSql from "../migrations/0002_statistics_sync.sql";
+import statisticsSummaryMigrationSql from "../migrations/0003_statistics_summary.sql";
+import progressMetadataMigrationSql from "../migrations/0004_progress_metadata.sql";
 
 const REQUIRED_TABLES = ["users", "progress", "sessions", "statistics_snapshot"] as const;
 
-function splitSqlStatements(sql: string): string[] {
-  const statements: string[] = [];
-  let current = "";
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-  let inLineComment = false;
-  let inBlockComment = false;
-
-  for (let i = 0; i < sql.length; i++) {
-    const char = sql[i];
-    const next = sql[i + 1];
-
-    if (inLineComment) {
-      if (char === "\n") inLineComment = false;
-      current += char;
-      continue;
-    }
-
-    if (inBlockComment) {
-      current += char;
-      if (char === "*" && next === "/") {
-        current += next;
-        i++;
-        inBlockComment = false;
-      }
-      continue;
-    }
-
-    if (!inSingleQuote && !inDoubleQuote && char === "-" && next === "-") {
-      current += char + next;
-      i++;
-      inLineComment = true;
-      continue;
-    }
-
-    if (!inSingleQuote && !inDoubleQuote && char === "/" && next === "*") {
-      current += char + next;
-      i++;
-      inBlockComment = true;
-      continue;
-    }
-
-    if (char === "'" && !inDoubleQuote) {
-      if (inSingleQuote && next === "'") {
-        current += char + next;
-        i++;
-        continue;
-      }
-      inSingleQuote = !inSingleQuote;
-      current += char;
-      continue;
-    }
-
-    if (char === '"' && !inSingleQuote) {
-      if (inDoubleQuote && next === '"') {
-        current += char + next;
-        i++;
-        continue;
-      }
-      inDoubleQuote = !inDoubleQuote;
-      current += char;
-      continue;
-    }
-
-    if (char === ";" && !inSingleQuote && !inDoubleQuote) {
-      const statement = current.trim();
-      if (statement) statements.push(statement);
-      current = "";
-      continue;
-    }
-
-    current += char;
-  }
-
-  const tail = current.trim();
-  if (tail) statements.push(tail);
-  return statements;
-}
+const MIGRATIONS: Migration[] = [
+  { version: "0001_init", sql: initMigrationSql },
+  { version: "0002_statistics_sync", sql: statisticsMigrationSql },
+  { version: "0003_statistics_summary", sql: statisticsSummaryMigrationSql },
+  { version: "0004_progress_metadata", sql: progressMetadataMigrationSql },
+];
 
 export async function getDatabaseInitStatus(
   db: DatabaseAdapter
@@ -100,14 +31,7 @@ export async function getDatabaseInitStatus(
 }
 
 export async function initializeDatabase(db: DatabaseAdapter): Promise<void> {
-  const statements = [
-    ...splitSqlStatements(initMigrationSql),
-    ...splitSqlStatements(statisticsMigrationSql),
-  ];
-
-  for (const statement of statements) {
-    await db.prepare(statement).run();
-  }
+  await runMigrations(db, MIGRATIONS);
 }
 
 export async function findUserByUsername(
