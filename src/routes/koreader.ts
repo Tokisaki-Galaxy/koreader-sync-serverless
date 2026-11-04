@@ -26,6 +26,36 @@ const DOCUMENT_MISSING_MESSAGE = "Field 'document' not provided.";
 const UNAUTHORIZED_MESSAGE = "Unauthorized";
 const REGISTRATION_DISABLED_MESSAGE = "User registration is disabled.";
 const INVALID_SNAPSHOT_MESSAGE = "Invalid statistics snapshot payload";
+const MAX_METADATA_BYTES = 8192;
+const MAX_METADATA_FIELD_LENGTH = 512;
+
+function normalizeProgressMetadata(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const source = value as Record<string, unknown>;
+  const metadata: Record<string, string> = {};
+  for (const key of ["filename", "title", "authors"] as const) {
+    const field = source[key];
+    if (typeof field === "string" && field.length > 0) {
+      metadata[key] = field.slice(0, MAX_METADATA_FIELD_LENGTH);
+    }
+  }
+  if (Object.keys(metadata).length === 0) return null;
+  const json = JSON.stringify(metadata);
+  return json.length <= MAX_METADATA_BYTES ? json : null;
+}
+
+function parseProgressMetadata(value: string | null | undefined): Record<string, string> | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, string>;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
 
 function logError(c: any, label: string, error: unknown) {
   const isDebug = c.env.DEBUG === "1" || c.env.DEBUG === "true";
@@ -136,6 +166,7 @@ router.put("/syncs/progress", async (c) => {
       device,
       device_id: device_id ?? "",
       timestamp,
+      metadata: normalizeProgressMetadata(body.metadata),
     });
     return c.json({ document, timestamp });
   } catch (error) {
@@ -161,12 +192,14 @@ router.get("/syncs/progress/:document", async (c) => {
     // KOReader compatibility: official server always returns 200 and includes the document key.
     if (!row) return c.json({ document });
 
+    const metadata = parseProgressMetadata(row.metadata);
     return c.json({
       document,
       progress: row.progress,
       percentage: row.percentage,
       device: row.device,
       ...(row.device_id ? { device_id: row.device_id } : {}),
+      ...(metadata ? { metadata } : {}),
       timestamp: row.timestamp,
     });
   } catch (error) {

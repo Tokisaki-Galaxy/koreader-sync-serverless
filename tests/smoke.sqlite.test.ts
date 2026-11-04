@@ -48,6 +48,7 @@ beforeAll(() => {
       device TEXT NOT NULL,
       device_id TEXT NOT NULL,
       timestamp INTEGER NOT NULL,
+      metadata TEXT,
       updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
       UNIQUE (user_id, document)
     )`
