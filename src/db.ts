@@ -23,6 +23,25 @@ export async function getDatabaseInitStatus(
   );
   const missing: string[] = checks.filter((name) => name !== null);
 
+  const migrationTable = await db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .bind("schema_migrations")
+    .first<{ name: string }>();
+  const appliedVersions = new Set<string>();
+  if (migrationTable) {
+    const rows = await db
+      .prepare("SELECT version FROM schema_migrations")
+      .all<{ version: string }>();
+    for (const row of rows.results ?? []) {
+      appliedVersions.add(row.version);
+    }
+  }
+  for (const migration of MIGRATIONS) {
+    if (!appliedVersions.has(migration.version)) {
+      missing.push(`migration:${migration.version}`);
+    }
+  }
+
   for (const requirement of REQUIRED_COLUMNS) {
     if (missing.includes(requirement.table)) continue;
     try {
@@ -34,7 +53,11 @@ export async function getDatabaseInitStatus(
         if (!present.has(column)) missing.push(`${requirement.table}.${column}`);
       }
     } catch {
-      // Some adapters do not expose PRAGMA; the table checks still apply.
+      // Fail closed: if the column cannot be verified, report it so the admin
+      // UI offers to run migrations instead of hiding the action.
+      for (const column of requirement.columns) {
+        missing.push(`${requirement.table}.${column}`);
+      }
     }
   }
 

@@ -28,6 +28,32 @@ type MockDbOptions = {
   missingTables?: string[];
 };
 
+const MOCK_COLUMNS: Record<string, string[]> = {
+  users: ["id", "username", "password_hash", "created_at"],
+  progress: [
+    "id",
+    "user_id",
+    "document",
+    "progress",
+    "percentage",
+    "device",
+    "device_id",
+    "timestamp",
+    "metadata",
+    "updated_at",
+  ],
+  sessions: ["id", "user_id", "token_hash", "expires_at", "created_at"],
+  statistics_snapshot: [
+    "user_id",
+    "schema_version",
+    "device",
+    "device_id",
+    "snapshot_json",
+    "statistics_summary_json",
+    "updated_at",
+  ],
+};
+
 class MockD1Statement {
   private bound: unknown[] = [];
 
@@ -95,7 +121,20 @@ class MockD1Database {
       return kind === "first" ? (exists ? { name: table } : null) : [];
     }
 
-    if (q.startsWith("create table") || q.startsWith("create index") || q.startsWith("pragma") || q.startsWith("drop ")) {
+    if (q.startsWith("pragma table_info(")) {
+      const table = q
+        .slice("pragma table_info(".length)
+        .replace(/\)$/, "")
+        .trim();
+      const columns = MOCK_COLUMNS[table] ?? [];
+      return kind === "all" ? columns.map((name) => ({ name })) : null;
+    }
+
+    if (q.includes("select version from schema_migrations")) {
+      return kind === "all" ? [] : null;
+    }
+
+    if (q.startsWith("create table") || q.startsWith("create index") || q.startsWith("drop ")) {
       this.initialized = true;
       this.missingTables.clear();
       return { meta: { changes: 0 } };

@@ -7,8 +7,13 @@
     "dev": "wrangler dev",
     "start:local-prod": "tsx src/node/server.ts",
     "deploy": "wrangler deploy",
+    "generate:migrations": "node scripts/generate-migrations.mjs",
+    "check:migrations": "node scripts/generate-migrations.mjs --check",
+    "prestart:local-prod": "node scripts/generate-migrations.mjs",
+    "predeploy": "node scripts/generate-migrations.mjs",
+    "pretest": "node scripts/generate-migrations.mjs --check",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck",
+    "check": "npm run typecheck && npm run check:migrations",
     "test": "vitest run"
   },
   "dependencies": {

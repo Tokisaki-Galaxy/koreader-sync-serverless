@@ -27,5 +27,15 @@ ${entries.join("\n")}
 ];
 `;
 
-writeFileSync(outputPath, output, "utf8");
-console.log(`Wrote ${outputPath} with ${files.length} migrations.`);
+const check = process.argv.includes("--check");
+if (check) {
+  const current = readFileSync(outputPath, "utf8");
+  if (current !== output) {
+    console.error(`${outputPath} is out of date. Run: node scripts/generate-migrations.mjs`);
+    process.exit(1);
+  }
+  console.log(`${outputPath} is up to date.`);
+} else {
+  writeFileSync(outputPath, output, "utf8");
+  console.log(`Wrote ${outputPath} with ${files.length} migrations.`);
+}
