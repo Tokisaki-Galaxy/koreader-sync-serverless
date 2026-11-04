@@ -53,6 +53,7 @@ export interface DeviceUsage {
   firstSeenAt: number;
   lastSeenAt: number;
   records: number;
+  count: number;
   averageProgress: number | null;
 }
 

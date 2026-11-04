@@ -12,6 +12,7 @@ import {
   listProgressRecordsByUserFiltered,
   listUserDevicesWithUsage,
   mergeUserDevices,
+  touchUserDevice,
   updateUserDeviceSettings,
   upsertProgress,
   upsertStatisticsSnapshot,
@@ -160,14 +161,21 @@ router.post("/web/import", async (c) => {
     for (const row of rows) {
       if (!row.document || typeof row.document !== "string") continue;
       const timestamp = Number.isFinite(Number(row.timestamp)) ? Number(row.timestamp) : Math.floor(Date.now() / 1000);
+      const device = String(row.device ?? "").trim() || "Imported";
+      const deviceId = String(row.device_id ?? "");
       await upsertProgress(c.get("db"), auth.userId, {
         document: row.document,
         progress: String(row.progress ?? ""),
         percentage: Number.isFinite(Number(row.percentage)) ? Number(row.percentage) : 0,
-        device: String(row.device ?? ""),
-        device_id: String(row.device_id ?? ""),
+        device,
+        device_id: deviceId,
         timestamp,
       });
+      try {
+        await touchUserDevice(c.get("db"), auth.userId, device, deviceId, timestamp);
+      } catch {
+        // Device bookkeeping must never break the import.
+      }
       imported.progress += 1;
     }
   }
@@ -209,6 +217,11 @@ router.post("/web/import", async (c) => {
       JSON.stringify(mergedSnapshot),
       JSON.stringify(summary)
     );
+    try {
+      await touchUserDevice(c.get("db"), auth.userId, device, deviceId, Math.floor(Date.now() / 1000));
+    } catch {
+      // Device bookkeeping must never break the import.
+    }
     // Report books actually added by this import (new md5s), not the total
     // merged count, so an empty import can't masquerade as a success.
     const existingMd5s = new Set((existingSnapshot?.books ?? []).map((b) => b.md5));
@@ -226,8 +239,12 @@ router.get("/web/records", async (c) => {
   const auth = await authWebUser(c);
   if (!auth) return c.json({ error: "Unauthorized" }, 401);
 
-  const page = Math.max(1, Number(c.req.query("page") || "1"));
-  const pageSize = Math.min(100, Math.max(1, Number(c.req.query("pageSize") || "20")));
+  const rawPage = Number(c.req.query("page") || "1");
+  const page = Number.isFinite(rawPage) ? Math.max(1, Math.trunc(rawPage)) : 1;
+  const rawPageSize = Number(c.req.query("pageSize") || "20");
+  const pageSize = Number.isFinite(rawPageSize)
+    ? Math.min(100, Math.max(1, Math.trunc(rawPageSize)))
+    : 20;
   const offset = (page - 1) * pageSize;
   const search = (c.req.query("search") || "").trim();
   const deviceId = (c.req.query("device_id") || "").trim();
@@ -265,6 +282,7 @@ router.get("/web/stats", async (c) => {
       firstSeenAt: 0,
       lastSeenAt: 0,
       records: row.count,
+      count: row.count,
       averageProgress: null,
     }));
   }
@@ -319,7 +337,9 @@ router.patch("/web/devices/:id", async (c) => {
     if (body.alias !== null && typeof body.alias !== "string") {
       return badRequest("Invalid alias");
     }
-    const alias = typeof body.alias === "string" ? body.alias.trim().slice(0, 80) : "";
+    const alias = typeof body.alias === "string"
+      ? Array.from(body.alias.trim()).slice(0, 80).join("")
+      : "";
     settings.alias = alias || null;
   }
   if (body.hidden !== undefined) {
@@ -349,7 +369,11 @@ router.post("/web/devices/:id/merge", async (c) => {
   } catch {
     return badRequest("Invalid JSON body");
   }
-  const targetId = typeof body.targetId === "number" ? body.targetId : Number(body.targetId);
+  const targetId = typeof body.targetId === "number"
+    ? body.targetId
+    : typeof body.targetId === "string" && body.targetId.trim()
+      ? Number(body.targetId)
+      : NaN;
   if (!Number.isInteger(targetId) || targetId <= 0) {
     return badRequest("Invalid target device");
   }
@@ -358,6 +382,9 @@ router.post("/web/devices/:id/merge", async (c) => {
   if (!result.ok) {
     if (result.error === "same_device") {
       return badRequest("Cannot merge a device into itself");
+    }
+    if (result.error === "invalid_target") {
+      return badRequest("Choose a target device with a device ID");
     }
     return c.json({ error: "Device not found" }, 404);
   }

@@ -482,8 +482,15 @@ export async function listUserDevicesWithUsage(
   db: DatabaseAdapter,
   userId: number
 ): Promise<DeviceUsage[]> {
+  let deviceRows: UserDeviceRow[];
+  let usageRows: Array<{
+    device: string;
+    device_id: string;
+    records: number;
+    avg_percentage: number | null;
+  }>;
   try {
-    const { results: deviceRows } = await db.prepare(
+    const deviceResult = await db.prepare(
       `SELECT id, user_id, device_key, device, device_id, alias, hidden, first_seen_at, last_seen_at
        FROM user_devices
        WHERE user_id = ?
@@ -491,45 +498,57 @@ export async function listUserDevicesWithUsage(
     )
       .bind(userId)
       .all<UserDeviceRow>();
+    deviceRows = deviceResult.results ?? [];
 
-    const { results: progressRows } = await db.prepare(
-      `SELECT device, device_id, percentage FROM progress WHERE user_id = ?`
+    const usageResult = await db.prepare(
+      `SELECT device, device_id, COUNT(*) AS records, AVG(percentage) AS avg_percentage
+       FROM progress
+       WHERE user_id = ?
+       GROUP BY device, device_id`
     )
       .bind(userId)
-      .all<{ device: string; device_id: string; percentage: number }>();
-
-    const usage = new Map<string, { records: number; total: number; count: number }>();
-    for (const row of progressRows ?? []) {
-      const key = deviceKeyFor(row.device || "", row.device_id || "");
-      const entry = usage.get(key) ?? { records: 0, total: 0, count: 0 };
-      entry.records += 1;
-      if (typeof row.percentage === "number" && Number.isFinite(row.percentage)) {
-        entry.total += row.percentage;
-        entry.count += 1;
-      }
-      usage.set(key, entry);
+      .all<{
+        device: string;
+        device_id: string;
+        records: number;
+        avg_percentage: number | null;
+      }>();
+    usageRows = usageResult.results ?? [];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/no such table: user_devices/i.test(message)) {
+      // The caller falls back to the legacy progress-derived device list when
+      // the user_devices table is not available yet.
+      return [];
     }
-
-    return (deviceRows ?? []).map((row) => {
-      const entry = usage.get(row.device_key);
-      return {
-        id: row.id,
-        deviceKey: row.device_key,
-        device: row.device,
-        deviceId: row.device_id,
-        alias: row.alias,
-        hidden: row.hidden === 1,
-        firstSeenAt: row.first_seen_at,
-        lastSeenAt: row.last_seen_at,
-        records: entry?.records ?? 0,
-        averageProgress: entry && entry.count > 0 ? entry.total / entry.count : null,
-      };
-    });
-  } catch {
-    // The caller falls back to the legacy progress-derived device list when
-    // the user_devices table is not available yet.
-    return [];
+    throw error;
   }
+
+  const usage = new Map<string, { records: number; averageProgress: number | null }>();
+  for (const row of usageRows) {
+    usage.set(deviceKeyFor(row.device || "", row.device_id || ""), {
+      records: Number(row.records) || 0,
+      averageProgress: row.avg_percentage == null ? null : Number(row.avg_percentage),
+    });
+  }
+
+  return deviceRows.map((row) => {
+    const entry = usage.get(row.device_key);
+    const records = entry?.records ?? 0;
+    return {
+      id: row.id,
+      deviceKey: row.device_key,
+      device: row.device,
+      deviceId: row.device_id,
+      alias: row.alias,
+      hidden: row.hidden === 1,
+      firstSeenAt: row.first_seen_at,
+      lastSeenAt: row.last_seen_at,
+      records,
+      count: records,
+      averageProgress: entry?.averageProgress ?? null,
+    };
+  });
 }
 
 export async function getUserDeviceById(
@@ -578,11 +597,16 @@ export async function mergeUserDevices(
   userId: number,
   sourceId: number,
   targetId: number
-): Promise<{ ok: boolean; error?: "not_found" | "same_device" }> {
+): Promise<{ ok: boolean; error?: "not_found" | "same_device" | "invalid_target" }> {
   if (sourceId === targetId) return { ok: false, error: "same_device" };
   const source = await getUserDeviceById(db, userId, sourceId);
   const target = await getUserDeviceById(db, userId, targetId);
   if (!source || !target) return { ok: false, error: "not_found" };
+  if (source.device_id && !target.device_id) {
+    // A name-only target would be recreated as a separate id-keyed device on
+    // the next sync. Require an id-bearing target when the source has an id.
+    return { ok: false, error: "invalid_target" };
+  }
 
   if (source.device_id) {
     await db.prepare(
@@ -592,7 +616,23 @@ export async function mergeUserDevices(
       .run();
   } else {
     await db.prepare(
-      `UPDATE progress SET device = ?, device_id = ? WHERE user_id = ? AND device = ?`
+      `UPDATE progress SET device = ?, device_id = ?
+       WHERE user_id = ? AND device = ? AND (device_id IS NULL OR device_id = '')`
+    )
+      .bind(target.device, target.device_id, userId, source.device)
+      .run();
+  }
+
+  if (source.device_id) {
+    await db.prepare(
+      `UPDATE statistics_snapshot SET device = ?, device_id = ? WHERE user_id = ? AND device_id = ?`
+    )
+      .bind(target.device, target.device_id, userId, source.device_id)
+      .run();
+  } else {
+    await db.prepare(
+      `UPDATE statistics_snapshot SET device = ?, device_id = ?
+       WHERE user_id = ? AND device = ? AND (device_id IS NULL OR device_id = '')`
     )
       .bind(target.device, target.device_id, userId, source.device)
       .run();
@@ -629,7 +669,7 @@ export async function listProgressRecordsByUserFiltered(
     where.push("device_id = ?");
     values.push(options.deviceId);
   } else if (options.device) {
-    where.push("device = ?");
+    where.push("device = ? AND (device_id IS NULL OR device_id = '')");
     values.push(options.device);
   }
   values.push(options.pageSize, options.offset);

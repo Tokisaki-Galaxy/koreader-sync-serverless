@@ -54,6 +54,7 @@ describe("migrations", () => {
         "0003_statistics_summary",
         "0004_progress_metadata",
         "0005_user_devices",
+        "0006_user_devices_backfill",
       ]);
     } finally {
       db.close?.();
@@ -80,6 +81,7 @@ describe("migrations", () => {
         "0003_statistics_summary",
         "0004_progress_metadata",
         "0005_user_devices",
+        "0006_user_devices_backfill",
       ]);
     } finally {
       db.close?.();
