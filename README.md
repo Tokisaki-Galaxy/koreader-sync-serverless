@@ -13,7 +13,7 @@ A KOReader sync service with decoupled runtime/data adapters, currently supporti
 Includes:
 - KOReader-compatible sync APIs (register, auth, progress upload/fetch)
 - Admin Web UI for user management (delete user, force reset password)
-- User Web UI for personal login and statistics/records
+- User Web UI for personal login, statistics, records, and device management
 
 ![User Web UI 1](https://github.com/user-attachments/assets/f38570a1-4421-42bc-a524-2e624cab1ca5)
 ![User Web UI 2](https://github.com/user-attachments/assets/cea579c4-ee79-4db4-a173-e190855b033a)
@@ -29,6 +29,38 @@ For example, I use public server at `https://ksync.api.tski.uk/`.
 2. Click the settings icon and configure the plugin, set the server URL to `https://ksync.api.tski.uk/`.
 3. Click the register button to create a new account, or log in with your existing credentials.
 4. If you want to use the web dashboard, visit `https://ksync.api.tski.uk/` in your browser and log in with your KOReader credentials.
+
+## Device management
+
+The user dashboard groups progress by device:
+
+- Each device card shows records, last sync, share of records, and a short device ID.
+- Expand a card to see document count, average progress, first and last sync, recent records, and actions.
+- Rename stores a display alias. Hide moves the device into a collapsible hidden section.
+- Merge moves progress and statistics attribution to another device. Name-only devices are merged without touching same-name devices that have a device ID.
+- View all records filters the Data & Sync table by that device.
+- When the plugin sends document metadata, record rows show the book title and authors instead of only the document hash.
+
+Device identity is stored in `user_devices`, added by `0005_user_devices.sql` and refreshed by `0006_user_devices_backfill.sql`.
+
+## Migrations
+
+The Worker code and the D1 schema are deployed separately. Apply migrations before or immediately after deploying a Worker that depends on new columns or tables:
+
+```bash
+npx wrangler d1 migrations apply koreader-sync-db --remote
+```
+
+Current migrations:
+
+- `0001_init.sql` users, progress, sessions
+- `0002_statistics_sync.sql` statistics snapshot
+- `0003_statistics_summary.sql` materialized statistics summary
+- `0004_progress_metadata.sql` optional progress metadata
+- `0005_user_devices.sql` device table and backfill
+- `0006_user_devices_backfill.sql` timestamp backfill
+
+The `/admin` Initialize Database button runs all bundled migrations, so it is also safe for existing deployments that skipped the CLI. Run `pnpm run check:migrations` to verify the generated SQL bundle is up to date.
 
 ## Deployment
 

@@ -48,6 +48,7 @@ export async function authKoreader(c: AppContextWithDb): Promise<{ userId: numbe
   const iterations = parsePbkdf2Iterations(c.env);
   const ok = await verifyPassword(password, user.username, c.env.PASSWORD_PEPPER, user.password_hash, iterations);
   if (!ok) return null;
+  c.set("userId", user.id);
   return { userId: user.id, username: user.username };
 }
 
@@ -61,6 +62,7 @@ export async function authWebUser(c: AppContextWithDb): Promise<{ userId: number
 
   if (!row) return null;
   await maybeRenewSession(c, db, token, tokenHash, row.expires_at);
+  c.set("userId", row.id);
   return { userId: row.id, username: row.username };
 }
 

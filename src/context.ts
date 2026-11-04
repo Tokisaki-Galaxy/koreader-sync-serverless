@@ -8,6 +8,9 @@ export type AppEnv = {
   Bindings: Env;
   Variables: {
     db: DatabaseAdapter;
+    requestId: string;
+    userId?: number;
+    cspNonce?: string;
   };
 };
 

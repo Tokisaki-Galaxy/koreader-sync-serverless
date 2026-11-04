@@ -663,7 +663,7 @@ export async function listProgressRecordsByUserFiltered(
   db: DatabaseAdapter,
   userId: number,
   options: { search?: string; deviceId?: string; device?: string; pageSize: number; offset: number }
-): Promise<Array<{ document: string; progress: string; percentage: number; device: string; device_id: string; timestamp: number }>> {
+): Promise<Array<{ document: string; progress: string; percentage: number; device: string; device_id: string; metadata: string | null; timestamp: number }>> {
   const where: string[] = ["user_id = ?"];
   const values: unknown[] = [userId];
   if (options.search) {
@@ -679,7 +679,7 @@ export async function listProgressRecordsByUserFiltered(
   }
   values.push(options.pageSize, options.offset);
   const { results } = await db.prepare(
-    `SELECT document, progress, percentage, device, device_id, timestamp
+    `SELECT document, progress, percentage, device, device_id, metadata, timestamp
      FROM progress
      WHERE ${where.join(" AND ")}
      ORDER BY timestamp DESC
@@ -692,6 +692,7 @@ export async function listProgressRecordsByUserFiltered(
       percentage: number;
       device: string;
       device_id: string;
+      metadata: string | null;
       timestamp: number;
     }>();
   return results ?? [];

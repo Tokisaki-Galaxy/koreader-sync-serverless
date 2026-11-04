@@ -19,7 +19,9 @@ import type {
   StatisticsBookRow,
   StatisticsSnapshot,
 } from "../types";
-import type { AppEnv } from "../context";
+import type { AppEnv, AppContext } from "../context";
+import { logServerError } from "../services/errors";
+import { normalizeProgressMetadata, parseProgressMetadata } from "../services/metadata";
 
 const router = new Hono<AppEnv>();
 const INVALID_REQUEST_MESSAGE = "Invalid request";
@@ -27,59 +29,9 @@ const DOCUMENT_MISSING_MESSAGE = "Field 'document' not provided.";
 const UNAUTHORIZED_MESSAGE = "Unauthorized";
 const REGISTRATION_DISABLED_MESSAGE = "User registration is disabled.";
 const INVALID_SNAPSHOT_MESSAGE = "Invalid statistics snapshot payload";
-const MAX_METADATA_BYTES = 8192;
-const MAX_METADATA_FIELD_BYTES = 512;
-const utf8Encoder = new TextEncoder();
 
-function truncateUtf8(value: string, maxBytes: number): string {
-  if (utf8Encoder.encode(value).length <= maxBytes) return value;
-  let result = "";
-  let used = 0;
-  for (const char of value) {
-    const charBytes = utf8Encoder.encode(char).length;
-    if (used + charBytes > maxBytes) break;
-    result += char;
-    used += charBytes;
-  }
-  return result;
-}
-
-function normalizeProgressMetadata(value: unknown): string | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  const source = value as Record<string, unknown>;
-  const metadata: Record<string, string> = {};
-  for (const key of ["filename", "title", "authors"] as const) {
-    const field = source[key];
-    if (typeof field === "string" && field.length > 0) {
-      metadata[key] = truncateUtf8(field, MAX_METADATA_FIELD_BYTES);
-    }
-  }
-  if (Object.keys(metadata).length === 0) return null;
-  const json = JSON.stringify(metadata);
-  return utf8Encoder.encode(json).length <= MAX_METADATA_BYTES ? json : null;
-}
-
-function parseProgressMetadata(value: string | null | undefined): Record<string, string> | null {
-  if (!value) return null;
-  try {
-    const parsed = JSON.parse(value);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, string>;
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-function logError(c: any, label: string, error: unknown) {
-  const isDebug = c.env.DEBUG === "1" || c.env.DEBUG === "true";
-  if (isDebug) {
-    console.error(`[DEBUG ERROR] ${label}:`, error);
-    if (error instanceof Error && error.cause) {
-      console.error(`[DEBUG CAUSE] ${label}:`, error.cause);
-    }
-  }
+function logError(c: AppContext, label: string, error: unknown) {
+  logServerError(c, label, error);
 }
 
 function isRegistrationEnabled(env: Env): boolean {
