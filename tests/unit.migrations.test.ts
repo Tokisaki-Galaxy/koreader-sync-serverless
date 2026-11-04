@@ -40,6 +40,11 @@ describe("migrations", () => {
         .all<{ name: string }>();
       expect(columnNames(statisticsColumns)).toContain("statistics_summary_json");
 
+      const deviceColumns = await db.prepare("PRAGMA table_info(user_devices)").all<{ name: string }>();
+      expect(columnNames(deviceColumns)).toEqual(
+        expect.arrayContaining(["user_id", "device_key", "device", "device_id", "alias", "hidden"])
+      );
+
       const applied = await db
         .prepare("SELECT version FROM schema_migrations ORDER BY version")
         .all<{ version: string }>();
@@ -48,6 +53,8 @@ describe("migrations", () => {
         "0002_statistics_sync",
         "0003_statistics_summary",
         "0004_progress_metadata",
+        "0005_user_devices",
+        "0006_user_devices_backfill",
       ]);
     } finally {
       db.close?.();
@@ -73,6 +80,46 @@ describe("migrations", () => {
         "0002_statistics_sync",
         "0003_statistics_summary",
         "0004_progress_metadata",
+        "0005_user_devices",
+        "0006_user_devices_backfill",
+      ]);
+    } finally {
+      db.close?.();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("backfills user devices from progress and statistics", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "koreader-sync-devices-"));
+    const db = createSqliteDatabaseAdapter(join(dir, "test.db"));
+    try {
+      const migrations = loadMigrations();
+      await runMigrations(db, migrations.slice(0, 4));
+      await db.prepare(
+        "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)"
+      ).bind(1, "device-user", "hash").run();
+      await db.prepare(
+        `INSERT INTO progress (user_id, document, progress, percentage, device, device_id, timestamp, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(1, "doc-a", "page:1", 0.1, "Kindle", "id-1", 100, 100).run();
+      await db.prepare(
+        `INSERT INTO progress (user_id, document, progress, percentage, device, device_id, timestamp, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(1, "doc-b", "page:2", 0.2, "Kobo", "", 200, 200).run();
+      await db.prepare(
+        `INSERT INTO statistics_snapshot (user_id, schema_version, device, device_id, snapshot_json, statistics_summary_json, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).bind(1, 20221111, "PocketBook", "id-3", "{}", null, 300).run();
+
+      await runMigrations(db, migrations.slice(4));
+
+      const devices = await db.prepare(
+        "SELECT device_key, device, first_seen_at, last_seen_at FROM user_devices ORDER BY device_key"
+      ).all<{ device_key: string; device: string; first_seen_at: number; last_seen_at: number }>();
+      expect(devices.results).toEqual([
+        { device_key: "id:id-1", device: "Kindle", first_seen_at: 100, last_seen_at: 100 },
+        { device_key: "id:id-3", device: "PocketBook", first_seen_at: 300, last_seen_at: 300 },
+        { device_key: "name:Kobo", device: "Kobo", first_seen_at: 200, last_seen_at: 200 },
       ]);
     } finally {
       db.close?.();

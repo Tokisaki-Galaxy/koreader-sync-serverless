@@ -137,6 +137,39 @@ class MockD1Database {
       return kind === "all" ? columns.map((name) => ({ name })) : null;
     }
 
+    if (q.includes("from user_devices where user_id = ?")) {
+      return kind === "all" ? [] : null;
+    }
+
+    if (q.startsWith("insert into user_devices") || q.startsWith("update user_devices") || q.startsWith("delete from user_devices")) {
+      return { meta: { changes: 1 } };
+    }
+
+    if (q.includes("count(*) as records") && q.includes("from progress where user_id = ?") && q.includes("group by device, device_id")) {
+      const userId = Number(bound[0]);
+      const groups = new Map<string, { device: string; device_id: string; records: number; total: number }>();
+      for (const row of this.progress.filter((p) => p.user_id === userId)) {
+        const key = `${row.device}\u0000${row.device_id}`;
+        const group = groups.get(key) ?? {
+          device: row.device,
+          device_id: row.device_id,
+          records: 0,
+          total: 0,
+        };
+        group.records += 1;
+        group.total += Number(row.percentage) || 0;
+        groups.set(key, group);
+      }
+      return kind === "all"
+        ? [...groups.values()].map((group) => ({
+            device: group.device,
+            device_id: group.device_id,
+            records: group.records,
+            avg_percentage: group.records > 0 ? group.total / group.records : null,
+          }))
+        : null;
+    }
+
     if (q.includes("select version from schema_migrations")) {
       return kind === "all" ? [...this.appliedVersions].map((version) => ({ version })) : null;
     }

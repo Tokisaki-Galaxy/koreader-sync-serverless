@@ -1,9 +1,9 @@
 import type { DatabaseAdapter } from "./database/adapter";
-import type { ProgressRow, UserRow } from "./types";
+import type { DeviceUsage, ProgressRow, UserDeviceRow, UserRow } from "./types";
 import { runMigrations } from "./migrations";
 import { MIGRATIONS } from "./migrations-bundle";
 
-const REQUIRED_TABLES = ["users", "progress", "sessions", "statistics_snapshot"] as const;
+const REQUIRED_TABLES = ["users", "progress", "sessions", "statistics_snapshot", "user_devices"] as const;
 
 const REQUIRED_COLUMNS: Array<{ table: string; columns: string[] }> = [
   { table: "progress", columns: ["metadata"] },
@@ -447,5 +447,252 @@ export async function listDeviceUsageByUser(
   )
     .bind(userId)
     .all<{ device: string; count: number }>();
+  return results ?? [];
+}
+
+function deviceKeyFor(device: string, deviceId: string): string {
+  return deviceId ? `id:${deviceId}` : `name:${device}`;
+}
+
+export async function touchUserDevice(
+  db: DatabaseAdapter,
+  userId: number,
+  device: string,
+  deviceId: string,
+  timestamp: number
+): Promise<void> {
+  const normalizedDevice = device || "";
+  const normalizedDeviceId = deviceId || "";
+  const deviceKey = deviceKeyFor(normalizedDevice, normalizedDeviceId);
+  await db.prepare(
+    `INSERT INTO user_devices (
+      user_id, device_key, device, device_id, first_seen_at, last_seen_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, device_key) DO UPDATE SET
+      device = excluded.device,
+      device_id = excluded.device_id,
+      first_seen_at = MIN(user_devices.first_seen_at, excluded.first_seen_at),
+      last_seen_at = MAX(user_devices.last_seen_at, excluded.last_seen_at)`
+  )
+    .bind(userId, deviceKey, normalizedDevice, normalizedDeviceId, timestamp, timestamp)
+    .run();
+}
+
+export async function listUserDevicesWithUsage(
+  db: DatabaseAdapter,
+  userId: number
+): Promise<DeviceUsage[]> {
+  let deviceRows: UserDeviceRow[];
+  let usageRows: Array<{
+    device: string;
+    device_id: string;
+    records: number;
+    avg_percentage: number | null;
+  }>;
+  try {
+    const deviceResult = await db.prepare(
+      `SELECT id, user_id, device_key, device, device_id, alias, hidden, first_seen_at, last_seen_at
+       FROM user_devices
+       WHERE user_id = ?
+       ORDER BY last_seen_at DESC, id ASC`
+    )
+      .bind(userId)
+      .all<UserDeviceRow>();
+    deviceRows = deviceResult.results ?? [];
+
+    const usageResult = await db.prepare(
+      `SELECT device, device_id, COUNT(*) AS records, AVG(percentage) AS avg_percentage
+       FROM progress
+       WHERE user_id = ?
+       GROUP BY device, device_id`
+    )
+      .bind(userId)
+      .all<{
+        device: string;
+        device_id: string;
+        records: number;
+        avg_percentage: number | null;
+      }>();
+    usageRows = usageResult.results ?? [];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/no such table: user_devices/i.test(message)) {
+      // The caller falls back to the legacy progress-derived device list when
+      // the user_devices table is not available yet.
+      return [];
+    }
+    throw error;
+  }
+
+  const usage = new Map<string, { records: number; averageProgress: number | null }>();
+  for (const row of usageRows) {
+    usage.set(deviceKeyFor(row.device || "", row.device_id || ""), {
+      records: Number(row.records) || 0,
+      averageProgress: row.avg_percentage == null ? null : Number(row.avg_percentage),
+    });
+  }
+
+  return deviceRows.map((row) => {
+    const entry = usage.get(row.device_key);
+    const records = entry?.records ?? 0;
+    return {
+      id: row.id,
+      deviceKey: row.device_key,
+      device: row.device,
+      deviceId: row.device_id,
+      alias: row.alias,
+      hidden: row.hidden === 1,
+      firstSeenAt: row.first_seen_at,
+      lastSeenAt: row.last_seen_at,
+      records,
+      count: records,
+      averageProgress: entry?.averageProgress ?? null,
+    };
+  });
+}
+
+export async function getUserDeviceById(
+  db: DatabaseAdapter,
+  userId: number,
+  id: number
+): Promise<UserDeviceRow | null> {
+  const row = await db.prepare(
+    `SELECT id, user_id, device_key, device, device_id, alias, hidden, first_seen_at, last_seen_at
+     FROM user_devices
+     WHERE id = ? AND user_id = ?`
+  )
+    .bind(id, userId)
+    .first<UserDeviceRow>();
+  return row ?? null;
+}
+
+export async function updateUserDeviceSettings(
+  db: DatabaseAdapter,
+  userId: number,
+  id: number,
+  settings: { alias?: string | null; hidden?: boolean }
+): Promise<boolean> {
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  if (settings.alias !== undefined) {
+    sets.push("alias = ?");
+    values.push(settings.alias);
+  }
+  if (settings.hidden !== undefined) {
+    sets.push("hidden = ?");
+    values.push(settings.hidden ? 1 : 0);
+  }
+  if (sets.length === 0) return false;
+  values.push(id, userId);
+  const result = await db.prepare(
+    `UPDATE user_devices SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`
+  )
+    .bind(...values)
+    .run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+export async function mergeUserDevices(
+  db: DatabaseAdapter,
+  userId: number,
+  sourceId: number,
+  targetId: number
+): Promise<{ ok: boolean; error?: "not_found" | "same_device" | "invalid_target" }> {
+  if (sourceId === targetId) return { ok: false, error: "same_device" };
+  const source = await getUserDeviceById(db, userId, sourceId);
+  const target = await getUserDeviceById(db, userId, targetId);
+  if (!source || !target) return { ok: false, error: "not_found" };
+  if (source.device_id && !target.device_id) {
+    // A name-only target would be recreated as a separate id-keyed device on
+    // the next sync. Require an id-bearing target when the source has an id.
+    return { ok: false, error: "invalid_target" };
+  }
+
+  if (source.device_id) {
+    await db.prepare(
+      `UPDATE progress SET device = ?, device_id = ? WHERE user_id = ? AND device_id = ?`
+    )
+      .bind(target.device, target.device_id, userId, source.device_id)
+      .run();
+  } else {
+    await db.prepare(
+      `UPDATE progress SET device = ?, device_id = ?
+       WHERE user_id = ? AND device = ? AND (device_id IS NULL OR device_id = '')`
+    )
+      .bind(target.device, target.device_id, userId, source.device)
+      .run();
+  }
+
+  if (source.device_id) {
+    await db.prepare(
+      `UPDATE statistics_snapshot SET device = ?, device_id = ?
+       WHERE user_id = ? AND (
+         device_id = ? OR (device = ? AND (device_id IS NULL OR device_id = ''))
+       )`
+    )
+      .bind(target.device, target.device_id, userId, source.device_id, source.device)
+      .run();
+  } else {
+    await db.prepare(
+      `UPDATE statistics_snapshot SET device = ?, device_id = ?
+       WHERE user_id = ? AND device = ? AND (device_id IS NULL OR device_id = '')`
+    )
+      .bind(target.device, target.device_id, userId, source.device)
+      .run();
+  }
+
+  const nextAlias = target.alias ?? source.alias;
+  await db.prepare(
+    `UPDATE user_devices SET
+       first_seen_at = MIN(first_seen_at, ?),
+       last_seen_at = MAX(last_seen_at, ?),
+       alias = ?
+     WHERE id = ? AND user_id = ?`
+  )
+    .bind(source.first_seen_at, source.last_seen_at, nextAlias, targetId, userId)
+    .run();
+
+  await db.prepare(`DELETE FROM user_devices WHERE id = ? AND user_id = ?`)
+    .bind(sourceId, userId)
+    .run();
+
+  return { ok: true };
+}
+
+export async function listProgressRecordsByUserFiltered(
+  db: DatabaseAdapter,
+  userId: number,
+  options: { search?: string; deviceId?: string; device?: string; pageSize: number; offset: number }
+): Promise<Array<{ document: string; progress: string; percentage: number; device: string; device_id: string; timestamp: number }>> {
+  const where: string[] = ["user_id = ?"];
+  const values: unknown[] = [userId];
+  if (options.search) {
+    where.push("lower(document) LIKE ? ESCAPE '\\'");
+    values.push(likeParam(options.search));
+  }
+  if (options.deviceId) {
+    where.push("device_id = ?");
+    values.push(options.deviceId);
+  } else if (options.device) {
+    where.push("device = ? AND (device_id IS NULL OR device_id = '')");
+    values.push(options.device);
+  }
+  values.push(options.pageSize, options.offset);
+  const { results } = await db.prepare(
+    `SELECT document, progress, percentage, device, device_id, timestamp
+     FROM progress
+     WHERE ${where.join(" AND ")}
+     ORDER BY timestamp DESC
+     LIMIT ? OFFSET ?`
+  )
+    .bind(...values)
+    .all<{
+      document: string;
+      progress: string;
+      percentage: number;
+      device: string;
+      device_id: string;
+      timestamp: number;
+    }>();
   return results ?? [];
 }

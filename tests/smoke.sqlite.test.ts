@@ -212,6 +212,385 @@ describe("real-sqlite in-process smoke", () => {
     expect(exportData2.statistics.snapshot.books).toHaveLength(2);
   });
 
+  it("lists, renames, hides, merges, and filters devices", async () => {
+    await app.request(
+      "/users/create",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "deviceuser", password: "password" }),
+      },
+      env
+    );
+
+    const authHeaders = {
+      "x-auth-user": "deviceuser",
+      "x-auth-key": "5f4dcc3b5aa765d61d8327deb882cf99",
+      "content-type": "application/json",
+    };
+
+    const putProgress = (body: Record<string, unknown>) =>
+      app.request(
+        "/syncs/progress",
+        { method: "PUT", headers: authHeaders, body: JSON.stringify(body) },
+        env
+      );
+
+    expect((await putProgress({
+      document: "device-doc-a",
+      progress: "page:1",
+      percentage: 0.1,
+      device: "Kindle",
+      device_id: "id-1",
+    })).status).toBe(200);
+    expect((await putProgress({
+      document: "device-doc-b",
+      progress: "page:2",
+      percentage: 0.2,
+      device: "Kobo",
+      device_id: "",
+    })).status).toBe(200);
+
+    const statsPut = await app.request(
+      "/syncs/statistics",
+      {
+        method: "PUT",
+        headers: { ...authHeaders, "x-client-version": "y-anna-1.0", "User-Agent": "Mozilla/DONTLIKE/ANYTHING" },
+        body: JSON.stringify({
+          schema_version: 20221111,
+          device: "PocketBook",
+          device_id: "id-3",
+          snapshot: { books: [] },
+        }),
+      },
+      env
+    );
+    expect(statsPut.status).toBe(200);
+
+    const login = await app.request(
+      "/web/auth/login",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "deviceuser", password: "password" }),
+      },
+      env
+    );
+    const cookie = getCookieHeaderFromResponse(login, "ks_session");
+
+    const initial = await (await app.request("/web/stats", { headers: { cookie } }, env)).json();
+    expect(initial.devices).toHaveLength(3);
+    const kindle = initial.devices.find((d: { device: string }) => d.device === "Kindle");
+    const kobo = initial.devices.find((d: { device: string }) => d.device === "Kobo");
+    const pocket = initial.devices.find((d: { device: string }) => d.device === "PocketBook");
+    expect(kindle).toMatchObject({ deviceId: "id-1", records: 1, hidden: false });
+    expect(kobo).toMatchObject({ deviceId: "", records: 1, hidden: false });
+    expect(pocket).toMatchObject({ deviceId: "id-3", records: 0, hidden: false });
+
+    const rename = await app.request(
+      `/web/devices/${kindle.id}`,
+      {
+        method: "PATCH",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ alias: "Kindle PW5" }),
+      },
+      env
+    );
+    expect(rename.status).toBe(200);
+
+    const hide = await app.request(
+      `/web/devices/${kobo.id}`,
+      {
+        method: "PATCH",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ hidden: true }),
+      },
+      env
+    );
+    expect(hide.status).toBe(200);
+
+    const merge = await app.request(
+      `/web/devices/${kobo.id}/merge`,
+      {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ targetId: kindle.id }),
+      },
+      env
+    );
+    expect(merge.status).toBe(200);
+
+    const hidePocket = await app.request(
+      `/web/devices/${pocket.id}`,
+      {
+        method: "PATCH",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ hidden: true }),
+      },
+      env
+    );
+    expect(hidePocket.status).toBe(200);
+
+    const hiddenStats = await (await app.request("/web/stats", { headers: { cookie } }, env)).json();
+    expect(hiddenStats.devices).toHaveLength(2);
+    expect(hiddenStats.devices.find((d: { id: number }) => d.id === kindle.id)).toMatchObject({
+      alias: "Kindle PW5",
+      records: 2,
+    });
+    expect(hiddenStats.devices.find((d: { id: number }) => d.id === pocket.id)).toMatchObject({
+      hidden: true,
+    });
+    expect(hiddenStats.summary.totalDevices).toBe(1);
+
+    const unhidePocket = await app.request(
+      `/web/devices/${pocket.id}`,
+      {
+        method: "PATCH",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ hidden: false }),
+      },
+      env
+    );
+    expect(unhidePocket.status).toBe(200);
+
+    const records = await app.request(
+      "/web/records?device_id=id-1&pageSize=10",
+      { headers: { cookie } },
+      env
+    );
+    const recordsData = await records.json();
+    expect(recordsData.items).toHaveLength(2);
+    expect(recordsData.items.every((item: { device_id: string }) => item.device_id === "id-1")).toBe(true);
+  });
+
+  it("merges only name-only progress when the source has no device id", async () => {
+    await app.request(
+      "/users/create",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "mergeuser", password: "password" }),
+      },
+      env
+    );
+    const authHeaders = {
+      "x-auth-user": "mergeuser",
+      "x-auth-key": "5f4dcc3b5aa765d61d8327deb882cf99",
+      "content-type": "application/json",
+    };
+    const put = (body: Record<string, unknown>) =>
+      app.request("/syncs/progress", { method: "PUT", headers: authHeaders, body: JSON.stringify(body) }, env);
+    await put({ document: "merge-id-doc", progress: "page:1", percentage: 0.1, device: "Kobo", device_id: "kobo-id" });
+    await put({ document: "merge-name-doc", progress: "page:2", percentage: 0.2, device: "Kobo", device_id: "" });
+    await put({ document: "merge-target-doc", progress: "page:3", percentage: 0.3, device: "Kindle", device_id: "kindle-id" });
+
+    const login = await app.request(
+      "/web/auth/login",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "mergeuser", password: "password" }),
+      },
+      env
+    );
+    const cookie = getCookieHeaderFromResponse(login, "ks_session");
+    const stats = await (await app.request("/web/stats", { headers: { cookie } }, env)).json();
+    const koboId = stats.devices.find((d: { deviceId: string }) => d.deviceId === "kobo-id");
+    const koboName = stats.devices.find(
+      (d: { device: string; deviceId: string }) => d.device === "Kobo" && d.deviceId === ""
+    );
+    const kindle = stats.devices.find((d: { deviceId: string }) => d.deviceId === "kindle-id");
+    expect(koboId).toBeTruthy();
+    expect(koboName).toBeTruthy();
+    expect(kindle).toBeTruthy();
+
+    const merge = await app.request(
+      `/web/devices/${koboName.id}/merge`,
+      {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ targetId: kindle.id }),
+      },
+      env
+    );
+    expect(merge.status).toBe(200);
+
+    const idRecords = await (
+      await app.request("/web/records?device_id=kobo-id&pageSize=10", { headers: { cookie } }, env)
+    ).json();
+    expect(idRecords.items.map((item: { document: string }) => item.document)).toEqual(["merge-id-doc"]);
+
+    const targetRecords = await (
+      await app.request("/web/records?device_id=kindle-id&pageSize=10", { headers: { cookie } }, env)
+    ).json();
+    expect(
+      targetRecords.items.map((item: { document: string }) => item.document).sort()
+    ).toEqual(["merge-name-doc", "merge-target-doc"].sort());
+  });
+
+  it("rejects merging an id-bearing device into a name-only target", async () => {
+    await app.request(
+      "/users/create",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "invalidmerge", password: "password" }),
+      },
+      env
+    );
+    const authHeaders = {
+      "x-auth-user": "invalidmerge",
+      "x-auth-key": "5f4dcc3b5aa765d61d8327deb882cf99",
+      "content-type": "application/json",
+    };
+    const put = (body: Record<string, unknown>) =>
+      app.request("/syncs/progress", { method: "PUT", headers: authHeaders, body: JSON.stringify(body) }, env);
+    await put({ document: "invalid-source-doc", progress: "page:1", percentage: 0.1, device: "Kobo", device_id: "kobo-id2" });
+    await put({ document: "invalid-target-doc", progress: "page:2", percentage: 0.2, device: "PocketBook", device_id: "" });
+
+    const login = await app.request(
+      "/web/auth/login",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "invalidmerge", password: "password" }),
+      },
+      env
+    );
+    const cookie = getCookieHeaderFromResponse(login, "ks_session");
+    const stats = await (await app.request("/web/stats", { headers: { cookie } }, env)).json();
+    const source = stats.devices.find((d: { deviceId: string }) => d.deviceId === "kobo-id2");
+    const target = stats.devices.find(
+      (d: { device: string; deviceId: string }) => d.device === "PocketBook" && d.deviceId === ""
+    );
+    expect(source).toBeTruthy();
+    expect(target).toBeTruthy();
+
+    const merge = await app.request(
+      `/web/devices/${source.id}/merge`,
+      {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ targetId: target.id }),
+      },
+      env
+    );
+    expect(merge.status).toBe(400);
+
+    const sourceRecords = await (
+      await app.request("/web/records?device_id=kobo-id2&pageSize=10", { headers: { cookie } }, env)
+    ).json();
+    expect(sourceRecords.items.map((item: { document: string }) => item.document)).toEqual(["invalid-source-doc"]);
+    const targetRecords = await (
+      await app.request("/web/records?device=PocketBook&pageSize=10", { headers: { cookie } }, env)
+    ).json();
+    expect(targetRecords.items.map((item: { document: string }) => item.document)).toEqual(["invalid-target-doc"]);
+  });
+
+  it("blocks cross-user and invalid device operations", async () => {
+    for (const username of ["devowner", "devother"]) {
+      await app.request(
+        "/users/create",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ username, password: "password" }),
+        },
+        env
+      );
+    }
+
+    const ownerAuth = {
+      "x-auth-user": "devowner",
+      "x-auth-key": "5f4dcc3b5aa765d61d8327deb882cf99",
+      "content-type": "application/json",
+    };
+    await app.request(
+      "/syncs/progress",
+      {
+        method: "PUT",
+        headers: ownerAuth,
+        body: JSON.stringify({
+          document: "owner-doc",
+          progress: "page:1",
+          percentage: 0.1,
+          device: "OwnerDevice",
+          device_id: "owner-dev",
+        }),
+      },
+      env
+    );
+
+    const ownerLogin = await app.request(
+      "/web/auth/login",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "devowner", password: "password" }),
+      },
+      env
+    );
+    const ownerCookie = getCookieHeaderFromResponse(ownerLogin, "ks_session");
+    const otherLogin = await app.request(
+      "/web/auth/login",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "devother", password: "password" }),
+      },
+      env
+    );
+    const otherCookie = getCookieHeaderFromResponse(otherLogin, "ks_session");
+
+    const ownerStats = await (await app.request("/web/stats", { headers: { cookie: ownerCookie } }, env)).json();
+    const device = ownerStats.devices.find((d: { deviceId: string }) => d.deviceId === "owner-dev");
+    expect(device).toBeTruthy();
+
+    const crossPatch = await app.request(
+      `/web/devices/${device.id}`,
+      {
+        method: "PATCH",
+        headers: { cookie: otherCookie, "content-type": "application/json" },
+        body: JSON.stringify({ alias: "hacked" }),
+      },
+      env
+    );
+    expect(crossPatch.status).toBe(404);
+
+    const crossMerge = await app.request(
+      `/web/devices/${device.id}/merge`,
+      {
+        method: "POST",
+        headers: { cookie: otherCookie, "content-type": "application/json" },
+        body: JSON.stringify({ targetId: device.id + 1 }),
+      },
+      env
+    );
+    expect(crossMerge.status).toBe(404);
+
+    const sameDevice = await app.request(
+      `/web/devices/${device.id}/merge`,
+      {
+        method: "POST",
+        headers: { cookie: ownerCookie, "content-type": "application/json" },
+        body: JSON.stringify({ targetId: device.id }),
+      },
+      env
+    );
+    expect(sameDevice.status).toBe(400);
+
+    const missingTarget = await app.request(
+      `/web/devices/${device.id}/merge`,
+      {
+        method: "POST",
+        headers: { cookie: ownerCookie, "content-type": "application/json" },
+        body: JSON.stringify({ targetId: 999999 }),
+      },
+      env
+    );
+    expect(missingTarget.status).toBe(404);
+  });
+
   it("serves db-format schema payload on real runtime", async () => {
     const res = await app.request("/web/export/db-format", { method: "GET" }, env);
     expect(res.status).toBe(200);
