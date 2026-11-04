@@ -39,6 +39,7 @@ describe("migrations", () => {
         .prepare("PRAGMA table_info(statistics_snapshot)")
         .all<{ name: string }>();
       expect(columnNames(statisticsColumns)).toContain("statistics_summary_json");
+      expect(columnNames(statisticsColumns)).toContain("revision");
 
       const deviceColumns = await db.prepare("PRAGMA table_info(user_devices)").all<{ name: string }>();
       expect(columnNames(deviceColumns)).toEqual(

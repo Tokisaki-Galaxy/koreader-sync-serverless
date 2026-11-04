@@ -193,6 +193,7 @@ export interface StatisticsSnapshotMeta {
   device_id: string;
   snapshot_json: string;
   statistics_summary_json: string | null;
+  revision: number;
 }
 
 // Snapshots above this size are split across `statistics_snapshot_chunk` rows.
@@ -205,7 +206,7 @@ export async function getStatisticsSnapshotMeta(
   userId: number
 ): Promise<StatisticsSnapshotMeta | null> {
   const row = await db.prepare(
-    `SELECT schema_version, device, device_id, snapshot_json, statistics_summary_json
+    `SELECT schema_version, device, device_id, snapshot_json, statistics_summary_json, revision
      FROM statistics_snapshot
      WHERE user_id = ?`
   )
@@ -260,24 +261,43 @@ function appendChunkStatements(
 export async function loadStatisticsSnapshotJson(
   db: DatabaseAdapter,
   userId: number,
-  meta?: StatisticsSnapshotMeta | null
+  meta?: StatisticsSnapshotMeta | null,
+  allowRetry = true
 ): Promise<string> {
   const row = meta === undefined ? await getStatisticsSnapshotMeta(db, userId) : meta;
   if (!row) return "";
   if (row.snapshot_json) return row.snapshot_json;
-  return joinSnapshotChunks(await readStatisticsChunks(db, userId, "snapshot"));
+  const chunks = await readStatisticsChunks(db, userId, "snapshot");
+  if (chunks.length > 0) return joinSnapshotChunks(chunks);
+  if (allowRetry) {
+    // A concurrent sync may have switched this user back to inline storage
+    // between the metadata read and the chunk read.
+    const fresh = await getStatisticsSnapshotMeta(db, userId);
+    if (fresh && fresh.revision !== row.revision) {
+      return loadStatisticsSnapshotJson(db, userId, fresh, false);
+    }
+  }
+  return "";
 }
 
 export async function loadStatisticsSummaryJson(
   db: DatabaseAdapter,
   userId: number,
-  meta?: StatisticsSnapshotMeta | null
+  meta?: StatisticsSnapshotMeta | null,
+  allowRetry = true
 ): Promise<string | null> {
   const row = meta === undefined ? await getStatisticsSnapshotMeta(db, userId) : meta;
   if (!row || row.statistics_summary_json === null) return null;
   if (row.statistics_summary_json !== "") return row.statistics_summary_json;
   const chunks = await readStatisticsChunks(db, userId, "summary");
-  return chunks.length > 0 ? joinSnapshotChunks(chunks) : null;
+  if (chunks.length > 0) return joinSnapshotChunks(chunks);
+  if (allowRetry) {
+    const fresh = await getStatisticsSnapshotMeta(db, userId);
+    if (fresh && fresh.revision !== row.revision) {
+      return loadStatisticsSummaryJson(db, userId, fresh, false);
+    }
+  }
+  return null;
 }
 
 export async function getStatisticsSnapshot(
@@ -288,8 +308,15 @@ export async function getStatisticsSnapshot(
   if (!row) return null;
   if (row.snapshot_json) return row;
   const chunks = await readStatisticsChunks(db, userId, "snapshot");
-  if (chunks.length === 0) return row;
-  return { ...row, snapshot_json: joinSnapshotChunks(chunks) };
+  if (chunks.length > 0) {
+    return { ...row, snapshot_json: joinSnapshotChunks(chunks) };
+  }
+  // A concurrent sync may have replaced chunked storage with an inline snapshot.
+  const fresh = await getStatisticsSnapshotMeta(db, userId);
+  if (fresh && fresh.revision !== row.revision && fresh.snapshot_json) {
+    return fresh;
+  }
+  return row;
 }
 
 export async function upsertStatisticsSnapshot(
@@ -318,14 +345,15 @@ export async function upsertStatisticsSnapshot(
     db
       .prepare(
         `INSERT INTO statistics_snapshot (
-          user_id, schema_version, device, device_id, snapshot_json, statistics_summary_json, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, unixepoch())
+          user_id, schema_version, device, device_id, snapshot_json, statistics_summary_json, revision, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, unixepoch())
         ON CONFLICT(user_id) DO UPDATE SET
           schema_version = excluded.schema_version,
           device = excluded.device,
           device_id = excluded.device_id,
           snapshot_json = excluded.snapshot_json,
           statistics_summary_json = excluded.statistics_summary_json,
+          revision = statistics_snapshot.revision + 1,
           updated_at = unixepoch()`
       )
       .bind(
@@ -344,23 +372,20 @@ export async function upsertStatisticsSnapshot(
 export async function updateStatisticsSummary(
   db: DatabaseAdapter,
   userId: number,
-  summaryJson: string
-): Promise<void> {
-  const summaryChunks = chunkValue(summaryJson);
-  const statements: SqlStatement[] = [
-    db
-      .prepare("DELETE FROM statistics_snapshot_chunk WHERE user_id = ? AND kind = ?")
-      .bind(userId, "summary"),
-  ];
-  if (summaryChunks) {
-    appendChunkStatements(statements, db, userId, "summary", summaryChunks);
-  }
-  statements.push(
-    db
-      .prepare("UPDATE statistics_snapshot SET statistics_summary_json = ? WHERE user_id = ?")
-      .bind(summaryChunks ? "" : summaryJson, userId)
-  );
-  await db.batch(statements);
+  summaryJson: string,
+  expectedRevision: number
+): Promise<boolean> {
+  // Lazy rebuilds only persist inline summaries. Oversized summaries are
+  // recomputed on demand instead of risking a large write against a snapshot
+  // that may have changed since it was read.
+  if (chunkValue(summaryJson)) return false;
+  const result = await db
+    .prepare(
+      "UPDATE statistics_snapshot SET statistics_summary_json = ? WHERE user_id = ? AND revision = ?"
+    )
+    .bind(summaryJson, userId, expectedRevision)
+    .run();
+  return (result.meta.changes ?? 0) > 0;
 }
 
 export async function getUserById(

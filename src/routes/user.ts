@@ -43,6 +43,7 @@ import {
   getDbFormatPayload,
   progressDbDataToProgressRows,
 } from "../services/dbformat";
+import { MAX_SNAPSHOT_BYTES, snapshotByteLength } from "../services/snapshotChunks";
 import { renderUserPage } from "../ui/userPage";
 import type { StatisticsBookRow, UserLoginRequest } from "../types";
 import type { AppEnv } from "../context";
@@ -136,6 +137,11 @@ router.post("/web/import", async (c) => {
   const auth = await authWebUser(c);
   if (!auth) return c.json({ error: "Unauthorized" }, 401);
 
+  const declaredLength = Number(c.req.header("content-length") ?? "");
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_SNAPSHOT_BYTES) {
+    return c.json({ error: "Import payload too large" }, 413);
+  }
+
   let body: {
     progress?: unknown;
     statistics?: {
@@ -208,6 +214,10 @@ router.post("/web/import", async (c) => {
     const existing = await getStatisticsSnapshot(c.get("db"), auth.userId);
     const existingSnapshot = existing ? parseSnapshotFromJson(existing.snapshot_json) : null;
     const mergedSnapshot = mergeSnapshots(existingSnapshot, incomingSnapshot);
+    const mergedJson = JSON.stringify(mergedSnapshot);
+    if (snapshotByteLength(mergedJson) > MAX_SNAPSHOT_BYTES) {
+      return c.json({ error: "Statistics snapshot too large" }, 413);
+    }
     const summary = buildStatisticsSummary(mergedSnapshot);
 
     await upsertStatisticsSnapshot(
@@ -216,7 +226,7 @@ router.post("/web/import", async (c) => {
       schemaVersion,
       device,
       deviceId,
-      JSON.stringify(mergedSnapshot),
+      mergedJson,
       JSON.stringify(summary)
     );
     if (explicitDevice) {

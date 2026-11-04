@@ -11,6 +11,7 @@ import {
   upsertStatisticsSnapshot,
 } from "../src/db";
 import { getStatisticsWithSummary, STATISTICS_SUMMARY_VERSION } from "../src/services/statistics";
+import { SNAPSHOT_CHUNK_BYTES } from "../src/services/snapshotChunks";
 import type { DatabaseAdapter } from "../src/database/adapter";
 import { createSqliteDatabaseAdapter } from "../src/node/sqlite";
 import { runMigrations } from "../src/migrations";
@@ -27,13 +28,28 @@ const SMALL_SNAPSHOT = JSON.stringify({
 });
 
 const LARGE_SNAPSHOT_MD5 = "b".repeat(32);
+const LARGE_PAGE_STATS = Array.from({ length: 12000 }, (_, index) => ({
+  page: (index % 400) + 1,
+  start_time: 1700000000 + index * 60,
+  duration: 45,
+  total_pages: 400,
+}));
 
 const LARGE_SNAPSHOT = JSON.stringify({
   books: [
     {
       md5: LARGE_SNAPSHOT_MD5,
-      title: "书".repeat(250000),
-      page_stat_data: [{ page: 1, start_time: 1700000000, duration: 60, total_pages: 100 }],
+      title: "Large Book",
+      authors: "Author",
+      notes: 0,
+      last_open: 1700000000 + LARGE_PAGE_STATS.length * 60,
+      highlights: 0,
+      pages: 400,
+      series: "",
+      language: "en",
+      total_read_time: LARGE_PAGE_STATS.length * 45,
+      total_read_pages: LARGE_PAGE_STATS.length,
+      page_stat_data: LARGE_PAGE_STATS,
     },
   ],
 });
@@ -91,6 +107,14 @@ describe("statistics snapshot storage", () => {
     const loaded = await getStatisticsSnapshot(db, userId);
     expect(loaded?.snapshot_json).toBe(LARGE_SNAPSHOT);
     expect(await loadStatisticsSnapshotJson(db, userId)).toBe(LARGE_SNAPSHOT);
+
+    const size = await db
+      .prepare(
+        "SELECT MAX(LENGTH(CAST(data AS BLOB))) AS max_bytes FROM statistics_snapshot_chunk WHERE user_id = ? AND kind = ?"
+      )
+      .bind(userId, "snapshot")
+      .first<{ max_bytes: number }>();
+    expect(Number(size?.max_bytes ?? 0)).toBeLessThanOrEqual(SNAPSHOT_CHUNK_BYTES);
   });
 
   it("replaces chunk rows when the snapshot shrinks", async () => {
@@ -120,13 +144,26 @@ describe("statistics snapshot storage", () => {
   it("updates the cached summary without rewriting chunks", async () => {
     await upsertStatisticsSnapshot(db, userId, 20221111, "Kindle", "k-1", LARGE_SNAPSHOT, null);
     const before = await chunkCount();
-
-    await updateStatisticsSummary(db, userId, '{"version":2}');
-
     const meta = await getStatisticsSnapshotMeta(db, userId);
-    expect(meta?.statistics_summary_json).toBe('{"version":2}');
+
+    const saved = await updateStatisticsSummary(db, userId, '{"version":2}', meta!.revision);
+
+    expect(saved).toBe(true);
+    const updated = await getStatisticsSnapshotMeta(db, userId);
+    expect(updated?.statistics_summary_json).toBe('{"version":2}');
     expect(await chunkCount()).toBe(before);
     expect((await getStatisticsSnapshot(db, userId))?.snapshot_json).toBe(LARGE_SNAPSHOT);
+  });
+
+  it("skips a summary write when the snapshot revision moved on", async () => {
+    await upsertStatisticsSnapshot(db, userId, 20221111, "Kindle", "k-1", SMALL_SNAPSHOT, "old");
+    const staleRevision = (await getStatisticsSnapshotMeta(db, userId))!.revision;
+
+    await upsertStatisticsSnapshot(db, userId, 20221111, "Kindle", "k-1", SMALL_SNAPSHOT, "new");
+
+    const saved = await updateStatisticsSummary(db, userId, "stale", staleRevision);
+    expect(saved).toBe(false);
+    expect((await getStatisticsSnapshotMeta(db, userId))?.statistics_summary_json).toBe("new");
   });
 
   it("rebuilds a stale summary from chunked storage", async () => {
@@ -145,16 +182,15 @@ describe("statistics snapshot storage", () => {
     expect(result?.summary?.books[LARGE_SNAPSHOT_MD5]).toBeDefined();
 
     const meta = await getStatisticsSnapshotMeta(db, userId);
-    const summaryJson = await loadStatisticsSummaryJson(db, userId, meta);
-    expect(JSON.parse(summaryJson ?? "{}").version).toBe(STATISTICS_SUMMARY_VERSION);
-    expect(await chunkCount("summary")).toBeGreaterThan(0);
+    expect(JSON.parse(meta?.statistics_summary_json ?? "{}").version).toBe(
+      STATISTICS_SUMMARY_VERSION
+    );
+    expect(await chunkCount("summary")).toBe(0);
     expect((await getStatisticsSnapshot(db, userId))?.snapshot_json).toBe(LARGE_SNAPSHOT);
   });
 
   it("chunks an oversized summary so the metadata row stays small", async () => {
     const bigTitle = "书".repeat(250000);
-    await upsertStatisticsSnapshot(db, userId, 20221111, "Kindle", "k-1", SMALL_SNAPSHOT, null);
-
     const bigSummary = JSON.stringify({
       version: STATISTICS_SUMMARY_VERSION,
       daily: {},
@@ -177,7 +213,15 @@ describe("statistics snapshot storage", () => {
     });
     expect(new TextEncoder().encode(bigSummary).length).toBeGreaterThan(512 * 1024);
 
-    await updateStatisticsSummary(db, userId, bigSummary);
+    await upsertStatisticsSnapshot(
+      db,
+      userId,
+      20221111,
+      "Kindle",
+      "k-1",
+      SMALL_SNAPSHOT,
+      bigSummary
+    );
 
     const meta = await getStatisticsSnapshotMeta(db, userId);
     expect(meta?.statistics_summary_json).toBe("");

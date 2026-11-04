@@ -22,6 +22,7 @@ import type {
 import type { AppEnv, AppContext } from "../context";
 import { logServerError } from "../services/errors";
 import { normalizeProgressMetadata, parseProgressMetadata } from "../services/metadata";
+import { MAX_SNAPSHOT_BYTES, snapshotByteLength } from "../services/snapshotChunks";
 
 const router = new Hono<AppEnv>();
 const INVALID_REQUEST_MESSAGE = "Invalid request";
@@ -182,6 +183,10 @@ router.get("/syncs/progress/:document", async (c) => {
 });
 
 router.put("/syncs/statistics", async (c) => {
+  const declaredLength = Number(c.req.header("content-length") ?? "");
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_SNAPSHOT_BYTES) {
+    return c.json({ message: "Statistics snapshot too large" }, 413);
+  }
   const ua = c.req.header("user-agent");
   const version = c.req.header("x-client-version");
   if (!version || !version.startsWith("y-anna-") || ua !== "Mozilla/DONTLIKE/ANYTHING") {
@@ -226,6 +231,10 @@ router.put("/syncs/statistics", async (c) => {
     const existing = await getStatisticsSnapshot(c.get("db"), auth.userId);
     const existingSnapshot = existing ? parseSnapshotFromJson(existing.snapshot_json) : null;
     const mergedSnapshot = mergeSnapshots(existingSnapshot, incomingSnapshot);
+    const mergedJson = JSON.stringify(mergedSnapshot);
+    if (snapshotByteLength(mergedJson) > MAX_SNAPSHOT_BYTES) {
+      return c.json({ message: "Statistics snapshot too large" }, 413);
+    }
     const summary = buildStatisticsSummary(mergedSnapshot);
 
     await upsertStatisticsSnapshot(
@@ -234,7 +243,7 @@ router.put("/syncs/statistics", async (c) => {
       schemaVersion,
       device,
       deviceId,
-      JSON.stringify(mergedSnapshot),
+      mergedJson,
       JSON.stringify(summary)
     );
     try {

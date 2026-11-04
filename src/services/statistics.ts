@@ -550,7 +550,31 @@ export async function getStatisticsWithSummary(
     if (snapshot) {
       summary = buildStatisticsSummary(snapshot);
       try {
-        await updateStatisticsSummary(db, userId, JSON.stringify(summary));
+        const saved = await updateStatisticsSummary(
+          db,
+          userId,
+          JSON.stringify(summary),
+          row.revision
+        );
+        if (!saved) {
+          // The snapshot moved on while the summary was rebuilt, or the
+          // summary is too large to cache inline. Never return a summary that
+          // belongs to a superseded snapshot.
+          const freshRow = await getStatisticsSnapshotMeta(db, userId);
+          if (freshRow && freshRow.revision !== row.revision) {
+            const freshSummary = parseStatisticsSummary(
+              await loadStatisticsSummaryJson(db, userId, freshRow)
+            );
+            if (freshSummary) {
+              summary = freshSummary;
+            } else {
+              const freshSnapshot = parseSnapshotFromJson(
+                await loadStatisticsSnapshotJson(db, userId, freshRow)
+              );
+              if (freshSnapshot) summary = buildStatisticsSummary(freshSnapshot);
+            }
+          }
+        }
       } catch {
         // Non-fatal: the backfill is retried on the next read.
       }

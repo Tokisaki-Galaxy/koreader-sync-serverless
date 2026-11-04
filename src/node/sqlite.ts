@@ -66,14 +66,18 @@ class SqliteDatabaseAdapter implements DatabaseAdapter {
 
   async batch(statements: SqlStatement[]): Promise<void> {
     if (statements.length === 0) return;
-    this.db.exec("BEGIN");
+    this.db.exec("BEGIN IMMEDIATE");
     try {
       for (const statement of statements) {
         await statement.run();
       }
       this.db.exec("COMMIT");
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      try {
+        this.db.exec("ROLLBACK");
+      } catch {
+        // SQLite may already have rolled the transaction back.
+      }
       throw error;
     }
   }

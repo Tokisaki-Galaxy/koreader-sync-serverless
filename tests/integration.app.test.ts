@@ -5,6 +5,7 @@ import { parsePbkdf2Iterations } from "../src/services/common";
 import { getDatabaseInitStatus, getStatisticsSnapshot, listAllProgressByUser, upsertStatisticsSnapshot } from "../src/db";
 import { D1DatabaseAdapter } from "../src/database/d1Adapter";
 import { STATISTICS_SUMMARY_VERSION } from "../src/services/statistics";
+import { MAX_SNAPSHOT_BYTES } from "../src/services/snapshotChunks";
 import { createMockEnv, readSessionExpiry, seedSession } from "./helpers/mock-db";
 import { getCookieHeaderFromResponse } from "./helpers/http";
 
@@ -684,6 +685,39 @@ describe("worker integration", () => {
     await expect(statsRes.json()).resolves.toMatchObject({
       readingStatistics: { totalBooks: 1 },
     });
+  });
+
+  it("rejects an oversized statistics payload before parsing it", async () => {
+    const env = createMockEnv();
+    const md5Password = "5f4dcc3b5aa765d61d8327deb882cf99";
+    const hash = await hashPassword(
+      md5Password,
+      "toolarge",
+      env.PASSWORD_PEPPER,
+      parsePbkdf2Iterations(env)
+    );
+    await env.DB.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)")
+      .bind("toolarge", hash)
+      .run();
+
+    const res = await app.request(
+      "/syncs/statistics",
+      {
+        method: "PUT",
+        headers: {
+          "x-auth-user": "toolarge",
+          "x-auth-key": md5Password,
+          "content-type": "application/json",
+          "x-client-version": "y-anna-1.0",
+          "User-Agent": "Mozilla/DONTLIKE/ANYTHING",
+          "content-length": String(MAX_SNAPSHOT_BYTES + 1),
+        },
+        body: "{}",
+      },
+      env
+    );
+    expect(res.status).toBe(413);
+    await expect(res.json()).resolves.toEqual({ message: "Statistics snapshot too large" });
   });
 
   it("accepts admin cookie computed from token and pepper", async () => {
